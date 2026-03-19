@@ -1,0 +1,2 @@
+selected_features,feature_count,final_loss,test_correlation,test_directional_accuracy
+sma_50|sma_20|sma_200|volume_trend|volatility_60|RSI_14|price_vs_sma50|momentum_20|volatility_20|log_return_20,10,0.2432345428140529,0.006424230057746172,0.4835684597492218

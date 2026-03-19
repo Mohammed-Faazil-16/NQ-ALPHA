@@ -1,0 +1,4 @@
+iteration,correlation,directional_accuracy,features
+1,0.03343440219759941,0.4943622946739197,sma_50|sma_20|sma_200|volume_trend|volatility_60|RSI_14|price_vs_sma50|momentum_20|volatility_20|log_return_20
+2,0.03343440219759941,0.4943622946739197,sma_50|sma_20|sma_200|volume_trend|volatility_60|RSI_14|price_vs_sma50|momentum_20|volatility_20|log_return_20
+3,0.03343440219759941,0.4943622946739197,sma_50|sma_20|sma_200|volume_trend|volatility_60|RSI_14|price_vs_sma50|momentum_20|volatility_20|log_return_20

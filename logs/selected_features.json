@@ -1,0 +1,18 @@
+{
+  "active_features": [
+    "momentum_20",
+    "volatility_20",
+    "previous_regime_state",
+    "regime_change_flag",
+    "time_since_regime_change",
+    "volume_spike",
+    "correlation_cluster_strength",
+    "asset_market_corr_20",
+    "sma_50",
+    "RSI_14",
+    "high_vol_regime_flag",
+    "vol_adjusted_return_1",
+    "abnormal_volume_indicator",
+    "lag_rank_return_1"
+  ]
+}

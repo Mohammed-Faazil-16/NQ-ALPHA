@@ -1,0 +1,4899 @@
+PROJECT STRUCTURE
+==================
+neuroquant v1/
+    agents/
+        __init__.py
+        advisor_agent/
+            __init__.py
+        alpha_agent/
+            __init__.py
+            dataset_builder.py
+            evaluate_alpha_model.py
+            feature_evaluator.py
+            loss_functions.py
+            neuroquant_model.py
+            run_alpha_research.py
+            run_auto_alpha.py
+            run_stable_alpha.py
+            run_structured_alpha_upgrade.py
+            train_alpha_model.py
+        asset_universe_agent/
+            __init__.py
+            load_asset_universe.py
+            select_clean_assets.py
+        feature_agent/
+            __init__.py
+            generate_features.py
+        feature_engineering_agent/
+            __init__.py
+            generate_features.py
+        market_data_agent/
+            __init__.py
+            fetch_crypto.py
+            fetch_macro.py
+            fetch_stocks.py
+            scheduler.py
+        portfolio_agent/
+            __init__.py
+            env_portfolio.py
+            train_portfolio.py
+        regime_agent/
+            __init__.py
+        regime_detection_agent/
+            __init__.py
+            detect_regimes.py
+        risk_agent/
+            __init__.py
+    backend/
+        __init__.py
+        main.py
+        api/
+            __init__.py
+            user_routes.py
+        core/
+            __init__.py
+            config.py
+        database/
+            __init__.py
+            postgres.py
+            models/
+                __init__.py
+                asset.py
+                asset_universe.py
+                features.py
+                market_data.py
+                market_regime.py
+                user.py
+        schemas/
+            __init__.py
+            user_schema.py
+    configs/
+        dev.env
+    data_pipeline/
+    docker/
+    docs/
+    frontend/
+    infrastructure/
+    logs/
+        selected_features.json
+    models/
+        ablation_models/
+        portfolio_models/
+    scripts/
+        export_repo_snapshot.py
+        load_assets.py
+        regenerate_allcode.py
+        verify_allcode.py
+    services/
+        data_scheduler.py
+
+FILE CONTENTS:
+==============
+
+================================================================================
+FILE: agents/__init__.py
+
+
+================================================================================
+FILE: agents/advisor_agent/__init__.py
+
+
+================================================================================
+FILE: agents/alpha_agent/__init__.py
+
+
+================================================================================
+FILE: agents/alpha_agent/dataset_builder.py
+
+﻿from pathlib import Path
+import json
+import sys
+
+import numpy as np
+import pandas as pd
+import torch
+from sqlalchemy import and_
+from torch.utils.data import Dataset
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from backend.database.models.asset_universe import AssetUniverse
+from backend.database.models.features import Features
+from backend.database.models.market_data import MarketData
+from backend.database.models.market_regime import MarketRegime
+from backend.database.postgres import SessionLocal
+
+
+BASE_FEATURES = [
+    "log_return_1",
+    "sma_50",
+    "price_vs_sma20",
+    "price_vs_sma50",
+    "RSI_14",
+    "MACD_hist",
+    "volume_zscore",
+]
+
+CROSS_ASSET_FEATURES = [
+    "market_return",
+    "market_volatility",
+    "rank_return_1",
+    "relative_return_1",
+    "relative_strength_20",
+    "rolling_rank_mean_10",
+    "rolling_rank_std_10",
+    "cross_sectional_volatility",
+    "top_bottom_spread",
+]
+
+FACTOR_FEATURES = [
+    "momentum_20",
+    "volatility_20",
+    "vol_adjusted_return_1",
+    "return_zscore_5",
+    "price_deviation_20",
+    "volume_acceleration",
+    "price_volume_divergence",
+]
+
+INTERACTION_FEATURES = [
+    "momentum_x_volatility",
+    "momentum_x_volume",
+    "momentum_x_regime",
+    "volatility_x_regime",
+]
+
+MARKET_BREADTH_FEATURES = [
+    "breadth_up_pct",
+    "breadth_above_sma50_pct",
+    "breadth_dispersion",
+]
+
+REGIME_TRANSITION_FEATURES = [
+    "regime_change_flag",
+    "time_since_regime_change",
+    "previous_regime_state",
+]
+
+CORRELATION_FEATURES = [
+    "asset_market_corr_20",
+    "correlation_cluster_strength",
+    "corr_x_volatility",
+]
+
+VOLUME_SHOCK_FEATURES = [
+    "volume_spike",
+    "abnormal_volume_indicator",
+]
+
+VOLATILITY_REGIME_FEATURES = [
+    "high_vol_regime_flag",
+]
+
+LAGGED_SIGNAL_FEATURES = [
+    "lag_rank_return_1",
+]
+
+GLOBAL_CONTEXT_FEATURES = [
+    "market_return",
+    "market_volatility",
+    "breadth_up_pct",
+    "breadth_above_sma50_pct",
+    "breadth_dispersion",
+    "cross_sectional_volatility",
+    "top_bottom_spread",
+]
+
+FEATURE_COLUMNS = (
+    BASE_FEATURES
+    + CROSS_ASSET_FEATURES
+    + FACTOR_FEATURES
+    + INTERACTION_FEATURES
+    + MARKET_BREADTH_FEATURES
+    + REGIME_TRANSITION_FEATURES
+    + CORRELATION_FEATURES
+    + VOLUME_SHOCK_FEATURES
+    + VOLATILITY_REGIME_FEATURES
+    + LAGGED_SIGNAL_FEATURES
+)
+DEFAULT_ACTIVE_FEATURES = [
+    "momentum_20",
+    "volatility_20",
+    "vol_adjusted_return_1",
+    "rank_return_1",
+    "relative_strength_20",
+    "rolling_rank_mean_10",
+    "rolling_rank_std_10",
+    "cross_sectional_volatility",
+    "top_bottom_spread",
+    "return_zscore_5",
+    "price_deviation_20",
+    "volume_acceleration",
+    "price_volume_divergence",
+    "asset_market_corr_20",
+    "correlation_cluster_strength",
+    "corr_x_volatility",
+    "momentum_x_volatility",
+    "momentum_x_volume",
+    "momentum_x_regime",
+    "volatility_x_regime",
+]
+STORED_FEATURE_COLUMNS = [
+    "log_return_1",
+    "log_return_5",
+    "log_return_20",
+    "momentum_20",
+    "momentum_60",
+    "volatility_10",
+    "volatility_20",
+    "volatility_60",
+    "sma_20",
+    "sma_50",
+    "sma_200",
+    "price_vs_sma20",
+    "price_vs_sma50",
+    "price_vs_sma200",
+    "RSI_14",
+    "MACD",
+    "MACD_signal",
+    "MACD_hist",
+    "volume_change",
+    "volume_zscore",
+]
+
+REGIME_TO_ID = {
+    "bull": 0,
+    "normal": 1,
+    "volatile": 2,
+    "crisis": 3,
+}
+
+SEQUENCE_LENGTH = 30
+MIN_ASSETS = 10
+FEATURE_CLIP_VALUE = 5.0
+EXTREME_VALUE_THRESHOLD = 1_000.0
+TARGET_CLIP_VALUE = 1.0
+SPLIT_DATE = pd.Timestamp("2022-01-01")
+TARGET_HORIZON = 5
+LOGS_DIR = PROJECT_ROOT / "logs"
+ACTIVE_FEATURES_PATH = LOGS_DIR / "selected_features.json"
+
+
+def get_feature_groups():
+    return {
+        "base": list(BASE_FEATURES),
+        "cross_asset": list(CROSS_ASSET_FEATURES),
+        "factor": list(FACTOR_FEATURES),
+        "interaction": list(INTERACTION_FEATURES),
+        "market_breadth": list(MARKET_BREADTH_FEATURES),
+        "regime_transition": list(REGIME_TRANSITION_FEATURES),
+        "correlation": list(CORRELATION_FEATURES),
+        "volume_shock": list(VOLUME_SHOCK_FEATURES),
+        "volatility_regime": list(VOLATILITY_REGIME_FEATURES),
+        "lagged": list(LAGGED_SIGNAL_FEATURES),
+    }
+
+
+def _validate_feature_list(features):
+    cleaned = []
+    for feature in features:
+        if feature in FEATURE_COLUMNS and feature not in cleaned:
+            cleaned.append(feature)
+    return cleaned
+
+
+def _load_active_features_from_disk():
+    if not ACTIVE_FEATURES_PATH.exists():
+        return None
+
+    try:
+        data = json.loads(ACTIVE_FEATURES_PATH.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+
+    if isinstance(data, dict):
+        features = data.get("active_features", [])
+    elif isinstance(data, list):
+        features = data
+    else:
+        return None
+
+    validated = _validate_feature_list(features)
+    return validated or None
+
+
+ACTIVE_FEATURES = _load_active_features_from_disk() or list(DEFAULT_ACTIVE_FEATURES)
+
+
+def get_active_features():
+    return list(ACTIVE_FEATURES)
+
+
+def set_active_features(features, persist=True):
+    global ACTIVE_FEATURES
+
+    validated = _validate_feature_list(features)
+    if not validated:
+        raise ValueError("No valid active features were provided")
+
+    ACTIVE_FEATURES = validated
+
+    if persist:
+        LOGS_DIR.mkdir(parents=True, exist_ok=True)
+        ACTIVE_FEATURES_PATH.write_text(
+            json.dumps({"active_features": ACTIVE_FEATURES}, indent=2),
+            encoding="utf-8",
+        )
+
+    return get_active_features()
+
+
+def reset_active_features(persist=True):
+    return set_active_features(DEFAULT_ACTIVE_FEATURES, persist=persist)
+
+
+class AlphaDataset(Dataset):
+    def __init__(self, features_tensor, regimes_tensor, targets_tensor, masks_tensor, timestamps_tensor, symbols):
+        self.features_tensor = features_tensor
+        self.regimes_tensor = regimes_tensor
+        self.targets_tensor = targets_tensor
+        self.masks_tensor = masks_tensor
+        self.timestamps_tensor = timestamps_tensor
+        self.symbols = symbols
+
+    def __len__(self):
+        return len(self.timestamps_tensor)
+
+    def __getitem__(self, idx):
+        return (
+            self.features_tensor[idx],
+            self.regimes_tensor[idx],
+            self.targets_tensor[idx],
+            self.masks_tensor[idx],
+        )
+
+
+def _empty_dataset(sequence_length=SEQUENCE_LENGTH):
+    return AlphaDataset(
+        torch.empty((0, 0, sequence_length, len(get_active_features())), dtype=torch.float32),
+        torch.empty((0, 0), dtype=torch.long),
+        torch.empty((0, 0), dtype=torch.float32),
+        torch.empty((0, 0), dtype=torch.float32),
+        torch.empty((0,), dtype=torch.long),
+        [],
+    )
+
+
+def load_selected_symbols(db):
+    symbols = [
+        row[0]
+        for row in db.query(AssetUniverse.symbol)
+        .order_by(AssetUniverse.score.desc(), AssetUniverse.symbol.asc())
+        .all()
+    ]
+
+    if not symbols:
+        raise RuntimeError("No selected assets found in asset_universe. Run select_clean_assets.py first.")
+
+    print(f"Using {len(symbols)} high-quality assets for training")
+    return symbols
+
+
+def _compute_future_return(series, horizon=TARGET_HORIZON):
+    future_return = pd.Series(0.0, index=series.index, dtype=float)
+    for step in range(1, horizon + 1):
+        future_return = future_return.add(series.shift(-step), fill_value=0.0)
+
+    if len(future_return) > 0:
+        future_return.iloc[-min(horizon, len(future_return)) :] = np.nan
+    return future_return
+
+
+def _normalize_cross_sectional_rank(series):
+    normalized = pd.Series(np.nan, index=series.index, dtype=float)
+    valid = series.notna()
+    count = int(valid.sum())
+
+    if count == 0:
+        return normalized
+    if count == 1:
+        normalized.loc[valid] = 0.0
+        return normalized
+
+    ranked = series[valid].rank(method="average")
+    normalized.loc[valid] = 2.0 * ((ranked - 1.0) / (count - 1.0)) - 1.0
+    return normalized
+
+
+def _compute_rank_based_target(df):
+    df = df.sort_values(["symbol", "timestamp"]).reset_index(drop=True).copy()
+    df["future_return"] = df.groupby("symbol")["log_return_1"].transform(_compute_future_return)
+    df["target_rank"] = df.groupby("timestamp")["future_return"].transform(_normalize_cross_sectional_rank)
+    df["target_return"] = df["target_rank"].clip(-1.0, 1.0)
+    df["target_return"] = df["target_return"].replace([np.inf, -np.inf], np.nan)
+    return df
+
+
+def _compute_cross_sectional_rank(series_by_timestamp):
+    return series_by_timestamp.rank(pct=True)
+
+
+def _rolling_corr(left, right, window):
+    return left.rolling(window, min_periods=max(5, window // 2)).corr(right)
+
+
+def _compute_time_since_change(flags):
+    flags = flags.fillna(0).astype(int)
+    steps = []
+    since = 0
+    for idx, flag in enumerate(flags):
+        if idx == 0 or flag == 1:
+            since = 0
+        else:
+            since += 1
+        steps.append(float(since))
+    return pd.Series(steps, index=flags.index, dtype=float)
+
+
+def _compute_research_features(df):
+    grouped = df.groupby("symbol", sort=False)
+
+    df["momentum_5"] = grouped["log_return_1"].transform(lambda series: series.rolling(5).sum())
+    df["momentum_10"] = grouped["log_return_1"].transform(lambda series: series.rolling(10).sum())
+    df["momentum_20"] = grouped["log_return_1"].transform(lambda series: series.rolling(20).sum())
+
+    df["reversion_5"] = -df["momentum_5"]
+    df["reversion_10"] = -df["momentum_10"]
+
+    df["volatility_10"] = grouped["log_return_1"].transform(lambda series: series.rolling(10).std())
+    df["volatility_20"] = grouped["log_return_1"].transform(lambda series: series.rolling(20).std())
+    df["volume_trend"] = grouped["volume"].transform(lambda series: series.rolling(10).mean())
+
+    df["market_return"] = df.groupby("timestamp")["log_return_1"].transform("mean")
+    df["market_volatility"] = df.groupby("timestamp")["log_return_1"].transform("std").fillna(0.0)
+    df["relative_strength"] = df["log_return_1"] - df["market_return"]
+    df["market_momentum_5"] = df.groupby("timestamp")["momentum_5"].transform("mean")
+    df["zscore_return"] = (
+        df["log_return_1"] - df.groupby("timestamp")["log_return_1"].transform("mean")
+    ) / (df.groupby("timestamp")["log_return_1"].transform("std") + 1e-6)
+
+    df["rank_return_1"] = df.groupby("timestamp")["log_return_1"].transform(_compute_cross_sectional_rank)
+    df["rank_return_5"] = df.groupby("timestamp")["log_return_5"].transform(_compute_cross_sectional_rank)
+    df["rank_volume"] = df.groupby("timestamp")["volume"].transform(_compute_cross_sectional_rank)
+
+    df["relative_return_1"] = df["log_return_1"] - df["market_return"]
+    df["relative_momentum_5"] = df["momentum_5"] - df["market_momentum_5"]
+    df["relative_strength_20"] = df["momentum_20"] - df.groupby("timestamp")["momentum_20"].transform("mean")
+    df["rolling_rank_mean_10"] = grouped["rank_return_1"].transform(lambda series: series.rolling(10).mean())
+    df["rolling_rank_std_10"] = grouped["rank_return_1"].transform(lambda series: series.rolling(10).std())
+
+    df["cross_sectional_volatility"] = df.groupby("timestamp")["log_return_1"].transform("std")
+    df["top_bottom_spread"] = df.groupby("timestamp")["log_return_1"].transform(
+        lambda series: series.quantile(0.9) - series.quantile(0.1)
+    )
+
+    df["vol_adjusted_return_1"] = df["log_return_1"] / (df["volatility_20"] + 1e-6)
+    df["liquidity_ratio"] = df["volume"] / (df["volume_trend"] + 1e-6)
+    rolling_return_mean_5 = grouped["log_return_1"].transform(lambda series: series.rolling(5).mean())
+    rolling_return_std_5 = grouped["log_return_1"].transform(lambda series: series.rolling(5).std())
+    df["return_zscore_5"] = (df["log_return_1"] - rolling_return_mean_5) / (rolling_return_std_5 + 1e-6)
+    df["price_deviation_20"] = df["price_vs_sma20"]
+
+    rolling_volume_mean_10 = grouped["volume"].transform(lambda series: series.rolling(10).mean())
+    df["volume_acceleration"] = df["volume"] / (rolling_volume_mean_10 + 1e-6)
+    df["price_volume_divergence"] = df["log_return_1"] * df["volume_zscore"]
+
+    regime_ids = df["regime_label"].map(REGIME_TO_ID).fillna(0).astype(float)
+
+    df["breadth_up_pct"] = df.groupby("timestamp")["log_return_1"].transform(lambda series: (series > 0).mean())
+    df["breadth_above_sma50_pct"] = df.groupby("timestamp")["price_vs_sma50"].transform(lambda series: (series > 0).mean())
+    df["breadth_dispersion"] = df.groupby("timestamp")["log_return_1"].transform(
+        lambda series: series.quantile(0.75) - series.quantile(0.25)
+    )
+
+    df["previous_regime_state"] = grouped["regime_label"].shift(1).map(REGIME_TO_ID).fillna(0.0)
+    df["regime_change_flag"] = grouped["regime_label"].transform(
+        lambda series: series.ne(series.shift(1)).fillna(False).astype(float)
+    )
+    df["time_since_regime_change"] = grouped["regime_change_flag"].transform(_compute_time_since_change)
+
+    rolling_market = grouped.apply(
+        lambda group: _rolling_corr(group["log_return_1"], group["market_return"], 20)
+    ).reset_index(level=0, drop=True)
+    df["asset_market_corr_20"] = rolling_market.sort_index()
+
+    symbol_returns = df.pivot(index="timestamp", columns="symbol", values="log_return_1").sort_index()
+    cluster_strength_frames = []
+    for symbol in symbol_returns.columns:
+        peer_mean = symbol_returns.drop(columns=symbol).mean(axis=1) if symbol_returns.shape[1] > 1 else symbol_returns[symbol]
+        cluster_corr = _rolling_corr(symbol_returns[symbol], peer_mean, 20)
+        cluster_strength_frames.append(
+            pd.DataFrame(
+                {
+                    "timestamp": cluster_corr.index,
+                    "symbol": symbol,
+                    "correlation_cluster_strength": cluster_corr.values,
+                }
+            )
+        )
+    cluster_strength_df = pd.concat(cluster_strength_frames, ignore_index=True)
+    df = df.merge(cluster_strength_df, on=["timestamp", "symbol"], how="left")
+
+    rolling_volume_mean = grouped["volume"].transform(lambda series: series.rolling(20, min_periods=5).mean())
+    rolling_volume_std = grouped["volume"].transform(lambda series: series.rolling(20, min_periods=5).std())
+    df["volume_spike"] = df["volume"] / (rolling_volume_mean + 1e-6)
+    rolling_volume_zscore = (df["volume"] - rolling_volume_mean) / (rolling_volume_std + 1e-6)
+    df["abnormal_volume_indicator"] = (rolling_volume_zscore.abs() > 2.0).astype(float)
+
+    df["momentum_x_volatility"] = df["momentum_20"] * df["volatility_20"]
+    df["momentum_x_volume"] = df["momentum_20"] * df["volume_zscore"]
+    df["corr_x_volatility"] = df["asset_market_corr_20"] * df["volatility_20"]
+    df["momentum_x_regime"] = df["momentum_20"] * regime_ids
+    df["volatility_x_regime"] = df["volatility_20"] * regime_ids
+
+    rolling_vol_median = grouped["volatility_20"].transform(
+        lambda series: series.rolling(60, min_periods=20).median()
+    )
+    df["high_vol_regime_flag"] = (df["volatility_20"] > rolling_vol_median).astype(float)
+
+    df["lag_rank_return_1"] = grouped["rank_return_1"].shift(1)
+
+    return df
+
+
+def load_training_dataframe():
+    db = SessionLocal()
+    try:
+        selected_symbols = load_selected_symbols(db)
+        query = (
+            db.query(
+                Features.symbol,
+                Features.timestamp,
+                Features.log_return_1,
+                Features.log_return_5,
+                Features.log_return_20,
+                Features.momentum_20,
+                Features.momentum_60,
+                Features.volatility_10,
+                Features.volatility_20,
+                Features.volatility_60,
+                Features.sma_20,
+                Features.sma_50,
+                Features.sma_200,
+                Features.price_vs_sma20,
+                Features.price_vs_sma50,
+                Features.price_vs_sma200,
+                Features.RSI_14,
+                Features.MACD,
+                Features.MACD_signal,
+                Features.MACD_hist,
+                Features.volume_change,
+                Features.volume_zscore,
+                MarketRegime.regime_label,
+            )
+            .join(
+                MarketRegime,
+                and_(
+                    Features.symbol == MarketRegime.symbol,
+                    Features.timestamp == MarketRegime.timestamp,
+                ),
+            )
+            .filter(Features.symbol.in_(selected_symbols))
+            .order_by(Features.symbol, Features.timestamp)
+        )
+
+        rows = query.all()
+        if not rows:
+            return pd.DataFrame(
+                columns=[
+                    "symbol",
+                    "timestamp",
+                    *FEATURE_COLUMNS,
+                    "regime_label",
+                    "future_return",
+                    "target_return",
+                    "target_rank",
+                ]
+            )
+
+        columns = [
+            "symbol",
+            "timestamp",
+            "log_return_1",
+            "log_return_5",
+            "log_return_20",
+            "momentum_20",
+            "momentum_60",
+            "volatility_10",
+            "volatility_20",
+            "volatility_60",
+            "sma_20",
+            "sma_50",
+            "sma_200",
+            "price_vs_sma20",
+            "price_vs_sma50",
+            "price_vs_sma200",
+            "RSI_14",
+            "MACD",
+            "MACD_signal",
+            "MACD_hist",
+            "volume_change",
+            "volume_zscore",
+            "regime_label",
+        ]
+        df = pd.DataFrame(rows, columns=columns)
+        df["timestamp"] = pd.to_datetime(df["timestamp"])
+        df = df.sort_values(["symbol", "timestamp"]).reset_index(drop=True)
+
+        volume_rows = (
+            db.query(MarketData.symbol, MarketData.timestamp, MarketData.volume)
+            .filter(MarketData.symbol.in_(selected_symbols))
+            .all()
+        )
+        if volume_rows:
+            volume_df = pd.DataFrame(volume_rows, columns=["symbol", "timestamp", "volume"])
+            volume_df["timestamp"] = pd.to_datetime(volume_df["timestamp"])
+            volume_df = (
+                volume_df.sort_values(["symbol", "timestamp"])
+                .groupby(["symbol", "timestamp"], as_index=False)["volume"]
+                .mean()
+            )
+            df = df.merge(volume_df, on=["symbol", "timestamp"], how="left")
+        else:
+            df["volume"] = np.nan
+
+        df = _compute_research_features(df)
+
+        print("Using cross-asset enhanced features")
+        print("Using financial alpha factors")
+        print("Using new information source features")
+        print("Using strict cross-sectional normalization inputs")
+        df = _compute_rank_based_target(df)
+        print("Using cross-sectional rank target")
+
+        return df
+    finally:
+        db.close()
+
+
+def sanitize_training_dataframe(df):
+    if df.empty:
+        return df
+
+    df = df.copy()
+    df[FEATURE_COLUMNS] = df[FEATURE_COLUMNS].apply(pd.to_numeric, errors="coerce")
+    df["target_return"] = pd.to_numeric(df["target_return"], errors="coerce")
+
+    raw_feature_array = df[FEATURE_COLUMNS].to_numpy(dtype=np.float64, copy=True)
+    feature_nan_count = int(np.isnan(raw_feature_array).sum())
+    feature_inf_count = int(np.isinf(raw_feature_array).sum())
+
+    print(f"Feature NaN count before sanitization: {feature_nan_count}")
+    print(f"Feature Inf count before sanitization: {feature_inf_count}")
+
+    feature_frame = df[FEATURE_COLUMNS].replace([np.inf, -np.inf], np.nan)
+    max_abs_by_feature = feature_frame.abs().max().sort_values(ascending=False)
+    extreme_features = max_abs_by_feature[max_abs_by_feature > EXTREME_VALUE_THRESHOLD].head(10)
+
+    if not extreme_features.empty:
+        formatted = ", ".join(f"{name}={value:.4f}" for name, value in extreme_features.items())
+        print(f"Extreme raw feature ranges detected: {formatted}")
+    else:
+        top_features = max_abs_by_feature.head(5)
+        formatted = ", ".join(f"{name}={value:.4f}" for name, value in top_features.items())
+        print(f"Top raw feature magnitudes: {formatted}")
+
+    df[FEATURE_COLUMNS] = feature_frame
+    df["target_return"] = df["target_return"].replace([np.inf, -np.inf], np.nan)
+
+    invalid_target_rows = int(df["target_return"].isna().sum())
+    if invalid_target_rows:
+        print(f"Dropping {invalid_target_rows} rows with invalid target_return")
+
+    invalid_regime_rows = int((~df["regime_label"].isin(REGIME_TO_ID)).sum())
+    if invalid_regime_rows:
+        print(f"Dropping {invalid_regime_rows} rows with invalid regime labels")
+
+    df = df[df["regime_label"].isin(REGIME_TO_ID)]
+    df = df.dropna(subset=["target_return"]).reset_index(drop=True)
+    df["target_return"] = df["target_return"].clip(-TARGET_CLIP_VALUE, TARGET_CLIP_VALUE)
+
+    return df
+
+
+def _recompute_targets_within_split(split_df):
+    split_df = _compute_rank_based_target(split_df)
+    split_df = split_df.dropna(subset=["target_return"]).reset_index(drop=True)
+    split_df["target_return"] = split_df["target_return"].clip(-TARGET_CLIP_VALUE, TARGET_CLIP_VALUE)
+    return split_df
+
+
+def _normalize_per_timestamp(split_df, fill_values, global_means, global_stds):
+    feature_frame = split_df[FEATURE_COLUMNS].replace([np.inf, -np.inf], np.nan)
+    feature_frame = feature_frame.fillna(fill_values)
+
+    timestamp_index = split_df["timestamp"]
+    cross_sectional_features = [feature for feature in FEATURE_COLUMNS if feature not in GLOBAL_CONTEXT_FEATURES]
+    normalized = pd.DataFrame(index=feature_frame.index, columns=FEATURE_COLUMNS, dtype=np.float32)
+
+    if cross_sectional_features:
+        group_means = feature_frame[cross_sectional_features].groupby(timestamp_index).transform("mean")
+        group_stds = feature_frame[cross_sectional_features].groupby(timestamp_index).transform("std")
+        normalized[cross_sectional_features] = (
+            (feature_frame[cross_sectional_features] - group_means) / (group_stds + 1e-6)
+        )
+
+    if GLOBAL_CONTEXT_FEATURES:
+        normalized[GLOBAL_CONTEXT_FEATURES] = (
+            feature_frame[GLOBAL_CONTEXT_FEATURES] - global_means[GLOBAL_CONTEXT_FEATURES]
+        ) / (global_stds[GLOBAL_CONTEXT_FEATURES] + 1e-6)
+
+    normalized = normalized.replace([np.inf, -np.inf], np.nan).fillna(0.0)
+    normalized = normalized.clip(-FEATURE_CLIP_VALUE, FEATURE_CLIP_VALUE)
+    split_df[FEATURE_COLUMNS] = normalized.astype(np.float32)
+    return split_df
+
+
+def split_and_normalize_dataframe(df, split_date=SPLIT_DATE):
+    if df.empty:
+        return df.copy(), df.copy()
+
+    train_df = df[df["timestamp"] < split_date].copy()
+    test_df = df[df["timestamp"] >= split_date].copy()
+
+    train_df = _recompute_targets_within_split(train_df)
+    test_df = _recompute_targets_within_split(test_df)
+
+    if train_df.empty:
+        raise RuntimeError(f"No training rows found before {split_date.date()}")
+    if test_df.empty:
+        raise RuntimeError(f"No test rows found on or after {split_date.date()}")
+
+    train_features = train_df[FEATURE_COLUMNS].replace([np.inf, -np.inf], np.nan)
+    train_fill_values = train_features.median(numeric_only=True).fillna(0.0)
+    train_feature_frame = train_features.fillna(train_fill_values)
+    global_means = train_feature_frame[GLOBAL_CONTEXT_FEATURES].mean().fillna(0.0)
+    global_stds = train_feature_frame[GLOBAL_CONTEXT_FEATURES].std().replace(0, np.nan).fillna(1.0)
+
+    print("Applying hybrid normalization: cross-sectional for asset features, temporal z-score for global context")
+    train_df = _normalize_per_timestamp(train_df, train_fill_values, global_means, global_stds)
+    test_df = _normalize_per_timestamp(test_df, train_fill_values, global_means, global_stds)
+
+    train_feature_array = train_df[FEATURE_COLUMNS].to_numpy(dtype=np.float32, copy=False)
+    test_feature_array = test_df[FEATURE_COLUMNS].to_numpy(dtype=np.float32, copy=False)
+
+    if not np.isfinite(train_feature_array).all():
+        raise RuntimeError("Non-finite values remain in training features after normalization")
+    if not np.isfinite(test_feature_array).all():
+        raise RuntimeError("Non-finite values remain in test features after normalization")
+
+    print(
+        "Train normalized feature range: "
+        f"min={train_feature_array.min():.4f}, max={train_feature_array.max():.4f}"
+    )
+    print(
+        "Test normalized feature range: "
+        f"min={test_feature_array.min():.4f}, max={test_feature_array.max():.4f}"
+    )
+
+    return train_df, test_df
+
+
+def build_modeling_dataframes(split_date=SPLIT_DATE):
+    df = sanitize_training_dataframe(load_training_dataframe())
+    if df.empty:
+        return df.copy(), df.copy()
+    return split_and_normalize_dataframe(df, split_date=split_date)
+
+
+def build_dataset_from_dataframe(df, sequence_length=SEQUENCE_LENGTH):
+    if df.empty:
+        return _empty_dataset(sequence_length)
+
+    active_features = get_active_features()
+    symbol_groups = {}
+    for symbol, group in df.groupby("symbol", sort=False):
+        group = group.sort_values("timestamp").reset_index(drop=True)
+        if len(group) < sequence_length:
+            continue
+
+        feature_matrix = group[active_features].to_numpy(dtype=np.float32, copy=False)
+        regime_series = group["regime_label"].map(REGIME_TO_ID).to_numpy(dtype=np.int64, copy=False)
+        target_series = group["target_return"].to_numpy(dtype=np.float32, copy=False)
+        timestamp_series = group["timestamp"]
+
+        per_timestamp = {}
+        for end_idx in range(sequence_length - 1, len(group)):
+            start_idx = end_idx - sequence_length + 1
+            timestamp = timestamp_series.iloc[end_idx]
+            per_timestamp[timestamp] = {
+                "features": feature_matrix[start_idx : end_idx + 1],
+                "regime": regime_series[end_idx],
+                "target": target_series[end_idx],
+            }
+
+        if per_timestamp:
+            symbol_groups[symbol] = per_timestamp
+
+    if not symbol_groups:
+        return _empty_dataset(sequence_length)
+
+    symbol_order = sorted(symbol_groups)
+    all_timestamps = sorted(set().union(*(set(per_timestamp) for per_timestamp in symbol_groups.values())))
+
+    if not all_timestamps:
+        print("No timestamps found across selected assets after sequence construction")
+        return _empty_dataset(sequence_length)
+
+    feature_batches = []
+    regime_batches = []
+    target_batches = []
+    timestamp_values = []
+    asset_counts = []
+
+    for timestamp in all_timestamps:
+        feature_rows = []
+        regime_rows = []
+        target_rows = []
+
+        for symbol in symbol_order:
+            payload = symbol_groups[symbol].get(timestamp)
+            if payload is None:
+                continue
+            feature_rows.append(payload["features"])
+            regime_rows.append(payload["regime"])
+            target_rows.append(payload["target"])
+
+        if len(feature_rows) < MIN_ASSETS:
+            continue
+
+        feature_batches.append(feature_rows)
+        regime_batches.append(regime_rows)
+        target_batches.append(target_rows)
+        timestamp_values.append(pd.Timestamp(timestamp).value)
+        asset_counts.append(len(feature_rows))
+
+    if not feature_batches:
+        print(f"No cross-sectional samples met the minimum asset threshold of {MIN_ASSETS}")
+        return _empty_dataset(sequence_length)
+
+    max_assets = max(asset_counts)
+    num_samples = len(feature_batches)
+    feature_array = np.zeros((num_samples, max_assets, sequence_length, len(active_features)), dtype=np.float32)
+    regime_array = np.zeros((num_samples, max_assets), dtype=np.int64)
+    target_array = np.zeros((num_samples, max_assets), dtype=np.float32)
+    mask_array = np.zeros((num_samples, max_assets), dtype=np.float32)
+
+    for sample_idx, (feature_rows, regime_rows, target_rows) in enumerate(
+        zip(feature_batches, regime_batches, target_batches)
+    ):
+        count = len(feature_rows)
+        feature_array[sample_idx, :count] = np.asarray(feature_rows, dtype=np.float32)
+        regime_array[sample_idx, :count] = np.asarray(regime_rows, dtype=np.int64)
+        target_array[sample_idx, :count] = np.asarray(target_rows, dtype=np.float32)
+        mask_array[sample_idx, :count] = 1.0
+
+    timestamp_array = np.asarray(timestamp_values, dtype=np.int64)
+
+    if not np.isfinite(feature_array).all():
+        raise RuntimeError("Non-finite values detected in cross-sectional feature batches")
+    if not np.isfinite(target_array).all():
+        raise RuntimeError("Non-finite values detected in cross-sectional target batches")
+
+    print(f"Cross-sectional samples: {len(timestamp_array)}")
+    print(f"Average assets per sample: {float(np.mean(asset_counts)):.2f}")
+
+    return AlphaDataset(
+        torch.from_numpy(feature_array),
+        torch.from_numpy(regime_array),
+        torch.from_numpy(target_array),
+        torch.from_numpy(mask_array),
+        torch.from_numpy(timestamp_array),
+        symbol_order,
+    )
+
+
+def build_alpha_datasets(sequence_length=SEQUENCE_LENGTH, split_date=SPLIT_DATE):
+    train_df, test_df = build_modeling_dataframes(split_date=split_date)
+    if train_df.empty and test_df.empty:
+        empty_dataset = _empty_dataset(sequence_length)
+        return empty_dataset, empty_dataset
+
+    train_dataset = build_dataset_from_dataframe(train_df, sequence_length=sequence_length)
+    test_dataset = build_dataset_from_dataframe(test_df, sequence_length=sequence_length)
+
+    return train_dataset, test_dataset
+
+
+def build_alpha_dataset(sequence_length=SEQUENCE_LENGTH, split="train", split_date=SPLIT_DATE):
+    train_dataset, test_dataset = build_alpha_datasets(sequence_length=sequence_length, split_date=split_date)
+
+    if split == "train":
+        return train_dataset
+    if split == "test":
+        return test_dataset
+
+    raise ValueError("split must be 'train' or 'test'")
+
+================================================================================
+FILE: agents/alpha_agent/evaluate_alpha_model.py
+
+from pathlib import Path
+import sys
+
+import numpy as np
+import pandas as pd
+import torch
+from torch.utils.data import DataLoader
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from agents.alpha_agent.dataset_builder import build_alpha_dataset, get_active_features
+from agents.alpha_agent.neuroquant_model import NeuroQuantAlphaModel
+
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+MODEL_PATH = PROJECT_ROOT / "models" / "neuroquant_alpha_model.pt"
+
+
+def _safe_spearman(predictions, targets):
+    if len(predictions) < 2:
+        return np.nan
+
+    pred_series = pd.Series(predictions)
+    target_series = pd.Series(targets)
+    if pred_series.nunique() < 2 or target_series.nunique() < 2:
+        return np.nan
+    return float(pred_series.corr(target_series, method="spearman"))
+
+
+def evaluate(model_path=MODEL_PATH, return_metrics=False):
+    active_features = get_active_features()
+
+    print("Loading dataset...")
+    print(f"Active features ({len(active_features)}): {', '.join(active_features)}")
+    dataset = build_alpha_dataset(split="test")
+
+    if len(dataset) == 0:
+        raise RuntimeError("No test samples found on or after 2022-01-01")
+
+    dataloader = DataLoader(dataset, batch_size=64, shuffle=False)
+
+    model = NeuroQuantAlphaModel(feature_dim=len(active_features))
+    state_dict = torch.load(model_path, map_location="cpu", weights_only=True)
+    model.load_state_dict(state_dict)
+    model.to(device)
+    model.eval()
+
+    rank_ic_values = []
+    direction_hits = []
+    sample_count = 0
+
+    print("Evaluating on TEST SET (post-2022)")
+    print(f"Test samples: {len(dataset)}")
+
+    with torch.no_grad():
+        for features, regime_ids, targets, masks in dataloader:
+            features = features.to(device)
+            regime_ids = regime_ids.to(device)
+
+            preds = model(features, regime_ids).cpu()
+            targets = targets.cpu()
+            masks = masks.cpu()
+
+            for batch_idx in range(preds.shape[0]):
+                valid_mask = masks[batch_idx] > 0
+                valid_count = int(valid_mask.sum().item())
+                if valid_count < 2:
+                    continue
+
+                sample_preds = preds[batch_idx][valid_mask].numpy()
+                sample_targets = targets[batch_idx][valid_mask].numpy()
+                sample_count += valid_count
+
+                rank_ic = _safe_spearman(sample_preds, sample_targets)
+                if np.isfinite(rank_ic):
+                    rank_ic_values.append(rank_ic)
+
+                direction_hits.extend((np.sign(sample_preds) == np.sign(sample_targets)).astype(np.float32).tolist())
+
+    rank_ic = float(np.mean(rank_ic_values)) if rank_ic_values else 0.0
+    direction_acc = float(np.mean(direction_hits)) if direction_hits else 0.0
+
+    print("\n===== TEST EVALUATION =====")
+    print(f"Rank IC: {rank_ic:.4f}")
+    print(f"Test Directional Accuracy: {direction_acc:.4f}")
+
+    metrics = {
+        "correlation": rank_ic,
+        "rank_ic": rank_ic,
+        "directional_accuracy": direction_acc,
+        "sample_count": sample_count,
+    }
+    if return_metrics:
+        return metrics
+    return metrics
+
+
+if __name__ == "__main__":
+    evaluate()
+
+================================================================================
+FILE: agents/alpha_agent/feature_evaluator.py
+
+from pathlib import Path
+import sys
+
+import numpy as np
+import pandas as pd
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from agents.alpha_agent.dataset_builder import (
+    FEATURE_COLUMNS,
+    LOGS_DIR,
+    build_modeling_dataframes,
+    set_active_features,
+)
+
+
+FEATURE_IMPORTANCE_PATH = LOGS_DIR / "feature_importance.csv"
+
+
+def _safe_cross_sectional_ic(group, feature_name):
+    sample = group[[feature_name, "target_return"]].replace([np.inf, -np.inf], np.nan).dropna()
+    if len(sample) < 5:
+        return np.nan
+    if sample[feature_name].nunique() < 2 or sample["target_return"].nunique() < 2:
+        return np.nan
+    return sample[feature_name].corr(sample["target_return"], method="spearman")
+
+
+def evaluate_feature_importance(df=None, save_path=FEATURE_IMPORTANCE_PATH):
+    if df is None:
+        df, _ = build_modeling_dataframes()
+
+    if df.empty:
+        raise RuntimeError("Feature evaluation dataframe is empty")
+
+    grouped = list(df.groupby("timestamp", sort=True))
+    results = []
+
+    for feature_name in FEATURE_COLUMNS:
+        valid_frame = df[[feature_name, "target_return"]].replace([np.inf, -np.inf], np.nan).dropna()
+        if len(valid_frame) < 5:
+            correlation_mean = 0.0
+            correlation_std = np.inf
+            ic_mean = 0.0
+            ic_std = np.inf
+            stability = np.inf
+        else:
+            ic_values = []
+            for _, group in grouped:
+                ic = _safe_cross_sectional_ic(group, feature_name)
+                if pd.notna(ic):
+                    ic_values.append(ic)
+
+            if ic_values:
+                ic_series = pd.Series(ic_values, dtype=float)
+                rolling_ic = ic_series.rolling(30, min_periods=10).mean().dropna()
+                correlation_mean = float(ic_series.mean())
+                correlation_std = float(ic_series.std(ddof=0)) if len(ic_series) > 1 else 0.0
+                ic_mean = correlation_mean
+                ic_std = correlation_std
+                stability = float(rolling_ic.std(ddof=0)) if len(rolling_ic) > 1 else 0.0
+            else:
+                correlation_mean = 0.0
+                correlation_std = np.inf
+                ic_mean = 0.0
+                ic_std = np.inf
+                stability = np.inf
+
+        global_corr = float(valid_frame[feature_name].corr(valid_frame["target_return"])) if len(valid_frame) >= 5 else 0.0
+
+        results.append(
+            {
+                "feature_name": feature_name,
+                "correlation_mean": correlation_mean,
+                "correlation_std": correlation_std,
+                "global_correlation": global_corr,
+                "ic_mean": ic_mean,
+                "ic_std": ic_std,
+                "stability_over_time": stability,
+                "signal_score": abs(correlation_mean),
+            }
+        )
+
+    feature_stats = pd.DataFrame(results)
+    feature_stats = feature_stats.sort_values(["signal_score", "stability_over_time"], ascending=[False, True]).reset_index(drop=True)
+    feature_stats["rank"] = np.arange(1, len(feature_stats) + 1)
+
+    save_path = Path(save_path)
+    save_path.parent.mkdir(parents=True, exist_ok=True)
+    feature_stats.to_csv(save_path, index=False)
+    return feature_stats
+
+
+def filter_features(feature_stats, df, correlation_threshold=0.01, std_threshold=0.1, correlation_ceiling=0.9):
+    if feature_stats.empty:
+        return pd.DataFrame(), pd.DataFrame()
+
+    feature_stats = feature_stats.copy()
+    candidate_stats = feature_stats[
+        (feature_stats["correlation_mean"].abs() > correlation_threshold)
+        & (feature_stats["correlation_std"] < std_threshold)
+        & (feature_stats["stability_over_time"] < std_threshold)
+    ].copy()
+
+    dropped_rows = []
+    for _, row in feature_stats.iterrows():
+        feature_name = row["feature_name"]
+        if feature_name not in set(candidate_stats["feature_name"]):
+            reason = "low_signal"
+            if row["correlation_std"] >= std_threshold or row["stability_over_time"] >= std_threshold:
+                reason = "unstable_ic"
+            dropped_rows.append({**row.to_dict(), "drop_reason": reason, "correlated_with": ""})
+
+    if candidate_stats.empty:
+        return candidate_stats, pd.DataFrame(dropped_rows)
+
+    candidate_names = candidate_stats["feature_name"].tolist()
+    corr_matrix = df[candidate_names].corr().abs().fillna(0.0)
+
+    kept = []
+    correlated_drops = []
+    for _, row in candidate_stats.sort_values("signal_score", ascending=False).iterrows():
+        feature_name = row["feature_name"]
+        correlated_with = next((kept_feature for kept_feature in kept if corr_matrix.loc[feature_name, kept_feature] > correlation_ceiling), None)
+        if correlated_with is not None:
+            correlated_drops.append({**row.to_dict(), "drop_reason": "highly_correlated", "correlated_with": correlated_with})
+            continue
+        kept.append(feature_name)
+
+    kept_stats = candidate_stats[candidate_stats["feature_name"].isin(kept)].copy()
+    dropped_stats = pd.DataFrame(dropped_rows + correlated_drops)
+    return kept_stats, dropped_stats
+
+
+def select_top_features(feature_stats, top_k=10, persist=True):
+    if feature_stats.empty:
+        raise RuntimeError("No candidate features available for selection")
+
+    selected = (
+        feature_stats.sort_values(["signal_score", "stability_over_time"], ascending=[False, True])
+        .head(top_k)["feature_name"]
+        .tolist()
+    )
+    set_active_features(selected, persist=persist)
+    return selected
+
+================================================================================
+FILE: agents/alpha_agent/loss_functions.py
+
+import torch
+import torch.nn.functional as F
+
+
+def masked_mse_loss(pred, target, mask):
+    pred = pred.float()
+    target = target.float()
+    mask = mask.float()
+
+    squared_error = (pred - target) ** 2
+    weighted_error = squared_error * mask
+    normalizer = torch.clamp(mask.sum(), min=1.0)
+    return weighted_error.sum() / normalizer
+
+
+def masked_pairwise_ranking_loss(pred, target, mask):
+    pred = pred.float()
+    target = target.float()
+    mask = mask.float()
+
+    batch_losses = []
+    for batch_idx in range(pred.size(0)):
+        valid = mask[batch_idx] > 0.5
+        if valid.sum() < 2:
+            continue
+
+        batch_pred = pred[batch_idx][valid]
+        batch_target = target[batch_idx][valid]
+
+        target_diff = batch_target[:, None] - batch_target[None, :]
+        pair_mask = target_diff > 0
+        if not pair_mask.any():
+            continue
+
+        pred_diff = batch_pred[:, None] - batch_pred[None, :]
+        pair_loss = F.softplus(-pred_diff[pair_mask])
+        target_scale = target_diff[pair_mask].abs().clamp_min(1e-6)
+        batch_losses.append((pair_loss * target_scale).mean())
+
+    if not batch_losses:
+        return torch.zeros((), dtype=pred.dtype, device=pred.device)
+
+    return torch.stack(batch_losses).mean()
+
+
+def masked_bce_with_logits_loss(logits, target, mask):
+    logits = logits.float()
+    target = target.float()
+    mask = mask.float()
+
+    loss = F.binary_cross_entropy_with_logits(logits, target, reduction="none")
+    weighted_loss = loss * mask
+    normalizer = torch.clamp(mask.sum(), min=1.0)
+    return weighted_loss.sum() / normalizer
+
+================================================================================
+FILE: agents/alpha_agent/neuroquant_model.py
+
+import math
+
+import torch
+from torch import nn
+
+
+class PositionalEncoding(nn.Module):
+    def __init__(self, d_model, max_len=512):
+        super().__init__()
+        position = torch.arange(max_len, dtype=torch.float32).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, d_model, 2, dtype=torch.float32) * (-math.log(10000.0) / d_model))
+        pe = torch.zeros(max_len, d_model, dtype=torch.float32)
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+        self.register_buffer("pe", pe.unsqueeze(0), persistent=False)
+
+    def forward(self, x):
+        seq_len = x.size(1)
+        return x + self.pe[:, :seq_len]
+
+
+class NeuroQuantAlphaModel(nn.Module):
+    def __init__(self, feature_dim, model_type="transformer"):
+        super().__init__()
+        self.model_type = model_type.lower()
+        self.hidden_dim = 96
+        self.feature_projection = nn.Sequential(
+            nn.Linear(feature_dim, self.hidden_dim),
+            nn.LayerNorm(self.hidden_dim),
+            nn.GELU(),
+            nn.Linear(self.hidden_dim, self.hidden_dim),
+            nn.GELU(),
+        )
+
+        if self.model_type == "transformer":
+            encoder_layer = nn.TransformerEncoderLayer(
+                d_model=self.hidden_dim,
+                nhead=4,
+                dim_feedforward=192,
+                dropout=0.1,
+                batch_first=True,
+                activation="gelu",
+                norm_first=False,
+            )
+            self.position_encoding = PositionalEncoding(self.hidden_dim)
+            self.temporal_model = nn.TransformerEncoder(encoder_layer, num_layers=2)
+        elif self.model_type == "lstm":
+            self.position_encoding = None
+            self.temporal_model = nn.LSTM(
+                input_size=self.hidden_dim,
+                hidden_size=self.hidden_dim,
+                num_layers=2,
+                dropout=0.1,
+                batch_first=True,
+            )
+        else:
+            raise ValueError("model_type must be 'transformer' or 'lstm'")
+
+        self.regime_embedding = nn.Embedding(4, 16)
+        self.alpha_head = nn.Sequential(
+            nn.Linear(self.hidden_dim + 16, 64),
+            nn.GELU(),
+            nn.Dropout(0.1),
+            nn.Linear(64, 1),
+        )
+
+    def forward(self, features, regime_ids):
+        if features.dim() == 4:
+            batch_size, num_assets, seq_len, feat_dim = features.shape
+            flat_features = features.reshape(batch_size * num_assets, seq_len, feat_dim)
+            flat_regimes = regime_ids.reshape(batch_size * num_assets)
+            flat_scores = self._forward_flat(flat_features, flat_regimes)
+            return flat_scores.reshape(batch_size, num_assets)
+
+        if features.dim() == 3:
+            return self._forward_flat(features, regime_ids)
+
+        raise ValueError("features must have shape (batch, seq, feat) or (batch, assets, seq, feat)")
+
+    def _forward_flat(self, features, regime_ids):
+        regime_ids = regime_ids.long().to(features.device)
+        if regime_ids.dim() > 1:
+            regime_ids = regime_ids.squeeze(-1)
+        regime_ids = torch.clamp(regime_ids, 0, 3)
+
+        batch_size, seq_len, feat_dim = features.shape
+        x = features.reshape(batch_size * seq_len, feat_dim)
+        encoded = self.feature_projection(x).reshape(batch_size, seq_len, self.hidden_dim)
+
+        if self.model_type == "transformer":
+            temporal_output = self.temporal_model(self.position_encoding(encoded))
+            temporal_state = temporal_output[:, -1, :]
+        else:
+            temporal_output, _ = self.temporal_model(encoded)
+            temporal_state = temporal_output[:, -1, :]
+
+        regime_state = self.regime_embedding(regime_ids)
+        combined = torch.cat([temporal_state, regime_state], dim=1)
+        return self.alpha_head(combined).squeeze(-1)
+
+================================================================================
+FILE: agents/alpha_agent/run_alpha_research.py
+
+from pathlib import Path
+import re
+import sys
+
+import pandas as pd
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from agents.alpha_agent.dataset_builder import (
+    LOGS_DIR,
+    build_modeling_dataframes,
+    get_active_features,
+    reset_active_features,
+    set_active_features,
+)
+from agents.alpha_agent.evaluate_alpha_model import evaluate
+from agents.alpha_agent.feature_evaluator import evaluate_feature_importance, filter_features, select_top_features
+from agents.alpha_agent.train_alpha_model import train_alpha_model
+
+
+RESEARCH_RESULTS_PATH = LOGS_DIR / "alpha_research_results.csv"
+ABLATION_RESULTS_PATH = LOGS_DIR / "ablation_results.csv"
+ABLATION_MODEL_DIR = PROJECT_ROOT / "models" / "ablation_models"
+
+
+def _safe_slug(value):
+    return re.sub(r"[^A-Za-z0-9_\-]+", "_", value)
+
+
+def run_ablation_tests(selected_features, baseline_correlation, ablation_epochs=5):
+    results = []
+    ABLATION_MODEL_DIR.mkdir(parents=True, exist_ok=True)
+
+    for feature_name in selected_features:
+        ablated_features = [feature for feature in selected_features if feature != feature_name]
+        if not ablated_features:
+            continue
+
+        print(f"Running ablation without: {feature_name}")
+        set_active_features(ablated_features, persist=False)
+        model_path = ABLATION_MODEL_DIR / f"alpha_without_{_safe_slug(feature_name)}.pt"
+
+        train_alpha_model(model_path=model_path, epochs=ablation_epochs)
+        metrics = evaluate(model_path=model_path, return_metrics=True)
+        performance_drop = baseline_correlation - metrics["correlation"]
+
+        results.append(
+            {
+                "feature_name": feature_name,
+                "performance_drop": performance_drop,
+                "ablation_correlation": metrics["correlation"],
+                "ablation_directional_accuracy": metrics["directional_accuracy"],
+            }
+        )
+
+    set_active_features(selected_features, persist=True)
+
+    ablation_df = pd.DataFrame(results)
+    if not ablation_df.empty:
+        LOGS_DIR.mkdir(parents=True, exist_ok=True)
+        ablation_df.to_csv(ABLATION_RESULTS_PATH, index=False)
+    return ablation_df
+
+
+def run_alpha_research(top_k=10, run_ablation=True, ablation_epochs=5):
+    print("Starting alpha research pipeline...")
+    reset_active_features(persist=False)
+
+    train_df, _ = build_modeling_dataframes()
+    if train_df.empty:
+        raise RuntimeError("Training dataframe is empty; cannot run alpha research")
+
+    feature_stats = evaluate_feature_importance(train_df)
+    filtered_stats, dropped_stats = filter_features(feature_stats, train_df)
+    selection_source = filtered_stats if not filtered_stats.empty else feature_stats
+    selected_features = select_top_features(selection_source, top_k=top_k, persist=True)
+
+    print("Selected features:", ", ".join(selected_features))
+    top_ic_features = selection_source.head(min(10, len(selection_source)))["feature_name"].tolist()
+    print("Top IC features:", ", ".join(top_ic_features))
+    if dropped_stats.empty:
+        print("Dropped features: none")
+    else:
+        dropped_summary = ", ".join(
+            f"{row.feature_name} ({row.drop_reason})"
+            for row in dropped_stats.itertuples(index=False)
+        )
+        print("Dropped features:", dropped_summary)
+
+    train_metrics = train_alpha_model(return_metrics=True)
+    eval_metrics = evaluate(return_metrics=True)
+
+    research_rows = [
+        {
+            "selected_features": "|".join(selected_features),
+            "feature_count": len(selected_features),
+            "final_loss": train_metrics["final_loss"],
+            "test_correlation": eval_metrics["correlation"],
+            "test_directional_accuracy": eval_metrics["directional_accuracy"],
+        }
+    ]
+
+    LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(research_rows).to_csv(RESEARCH_RESULTS_PATH, index=False)
+
+    ablation_df = pd.DataFrame()
+    if run_ablation:
+        ablation_df = run_ablation_tests(selected_features, eval_metrics["correlation"], ablation_epochs=ablation_epochs)
+
+    return {
+        "selected_features": selected_features,
+        "train_metrics": train_metrics,
+        "eval_metrics": eval_metrics,
+        "feature_stats": feature_stats,
+        "dropped_features": dropped_stats,
+        "ablation_results": ablation_df,
+    }
+
+
+if __name__ == "__main__":
+    run_alpha_research()
+
+================================================================================
+FILE: agents/alpha_agent/run_auto_alpha.py
+
+﻿from contextlib import redirect_stderr, redirect_stdout
+from io import StringIO
+from pathlib import Path
+import csv
+import sys
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from agents.alpha_agent.dataset_builder import (
+    FEATURE_COLUMNS,
+    LOGS_DIR,
+    get_active_features,
+    set_active_features,
+)
+from agents.alpha_agent.evaluate_alpha_model import evaluate
+from agents.alpha_agent.feature_evaluator import evaluate_feature_importance
+from agents.alpha_agent.train_alpha_model import train_alpha_model
+
+
+MAX_ITERATIONS = 10
+STABLE_RUNS = 5
+NO_IMPROVEMENT_LIMIT = 3
+TARGET_CORRELATION = 0.08
+PROGRESS_PATH = LOGS_DIR / "auto_alpha_progress.csv"
+
+
+def _stable_score_feature_set(features, cache):
+    key = tuple(features)
+    if key in cache:
+        return cache[key]
+
+    set_active_features(features, persist=False)
+    with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
+        train_alpha_model(return_metrics=True)
+        eval_metrics = evaluate(return_metrics=True)
+
+    metrics = {
+        "correlation": float(eval_metrics["correlation"]),
+        "directional_accuracy": float(eval_metrics["directional_accuracy"]),
+        "runs": STABLE_RUNS,
+        "features": list(features),
+    }
+    cache[key] = metrics
+    return metrics
+
+
+def _choose_candidates(current_features, feature_stats):
+    current_set = set(current_features)
+
+    remove_candidate = None
+    add_candidate = None
+
+    active_stats = feature_stats[feature_stats["feature_name"].isin(current_set)]
+    if len(current_features) > 1 and not active_stats.empty:
+        remove_candidate = active_stats.sort_values(["signal_score", "stability_over_time"], ascending=[True, True]).iloc[0]["feature_name"]
+
+    inactive_stats = feature_stats[~feature_stats["feature_name"].isin(current_set)]
+    if not inactive_stats.empty:
+        add_candidate = inactive_stats.sort_values(["signal_score", "stability_over_time"], ascending=[False, True]).iloc[0]["feature_name"]
+
+    return remove_candidate, add_candidate
+
+
+def _log_progress(rows):
+    LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    with PROGRESS_PATH.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=["iteration", "correlation", "directional_accuracy", "features"])
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def run_auto_alpha(max_iterations=MAX_ITERATIONS):
+    cache = {}
+    progress_rows = []
+
+    current_features = get_active_features()
+    best_metrics = _stable_score_feature_set(current_features, cache)
+    best_result = {
+        "correlation": best_metrics["correlation"],
+        "directional_accuracy": best_metrics["directional_accuracy"],
+        "features": list(current_features),
+    }
+
+    no_improvement_count = 0
+    last_trained_features = list(current_features)
+
+    for iteration in range(1, max_iterations + 1):
+        set_active_features(current_features, persist=False)
+        with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
+            feature_stats = evaluate_feature_importance()
+
+        remove_candidate, add_candidate = _choose_candidates(current_features, feature_stats)
+        candidate_feature_sets = []
+
+        if remove_candidate is not None:
+            candidate_feature_sets.append([feature for feature in current_features if feature != remove_candidate])
+        if add_candidate is not None and add_candidate not in current_features:
+            candidate_feature_sets.append(current_features + [add_candidate])
+
+        candidate_feature_sets.append(list(current_features))
+
+        evaluated_candidates = []
+        for feature_set in candidate_feature_sets:
+            if not feature_set:
+                continue
+            metrics = _stable_score_feature_set(feature_set, cache)
+            evaluated_candidates.append(metrics)
+            last_trained_features = list(feature_set)
+
+        candidate_best = max(
+            evaluated_candidates,
+            key=lambda item: (item["correlation"], item["directional_accuracy"]),
+        )
+
+        if candidate_best["correlation"] > best_result["correlation"]:
+            current_features = list(candidate_best["features"])
+            best_result = {
+                "correlation": candidate_best["correlation"],
+                "directional_accuracy": candidate_best["directional_accuracy"],
+                "features": list(candidate_best["features"]),
+            }
+            no_improvement_count = 0
+        else:
+            no_improvement_count += 1
+            current_features = list(best_result["features"])
+
+        progress_rows.append(
+            {
+                "iteration": iteration,
+                "correlation": best_result["correlation"],
+                "directional_accuracy": best_result["directional_accuracy"],
+                "features": "|".join(best_result["features"]),
+            }
+        )
+        _log_progress(progress_rows)
+
+        if best_result["correlation"] >= TARGET_CORRELATION:
+            break
+        if no_improvement_count >= NO_IMPROVEMENT_LIMIT:
+            break
+
+    if list(last_trained_features) != list(best_result["features"]):
+        set_active_features(best_result["features"], persist=True)
+        with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
+            train_alpha_model(return_metrics=True)
+    else:
+        set_active_features(best_result["features"], persist=True)
+
+    return best_result
+
+
+if __name__ == "__main__":
+    result = run_auto_alpha()
+    print("===== AUTO ALPHA RESULT =====")
+    print(f"Best Correlation: {result['correlation']:.6f}")
+    print(f"Best Directional Accuracy: {result['directional_accuracy']:.6f}")
+    print(f"Best Features: {result['features']}")
+
+================================================================================
+FILE: agents/alpha_agent/run_stable_alpha.py
+
+from contextlib import redirect_stderr, redirect_stdout
+from io import StringIO
+from pathlib import Path
+import statistics
+import sys
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from agents.alpha_agent.evaluate_alpha_model import evaluate
+from agents.alpha_agent.train_alpha_model import train_alpha_model
+
+
+DEFAULT_RUNS = 5
+
+
+def run_stable_alpha(runs=DEFAULT_RUNS):
+    results = []
+
+    for _ in range(runs):
+        with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
+            train_alpha_model(return_metrics=True)
+            metrics = evaluate(return_metrics=True)
+        results.append(metrics)
+
+    correlations = [result["correlation"] for result in results]
+    directional_accuracies = [result["directional_accuracy"] for result in results]
+
+    avg_correlation = statistics.fmean(correlations)
+    std_correlation = statistics.pstdev(correlations) if len(correlations) > 1 else 0.0
+    avg_directional_accuracy = statistics.fmean(directional_accuracies)
+
+    print("===== FINAL STABLE RESULTS =====")
+    print(f"Runs: {runs}")
+    print(f"Average Correlation: {avg_correlation:.6f}")
+    print(f"Correlation Std: {std_correlation:.6f}")
+    print(f"Average Directional Accuracy: {avg_directional_accuracy:.6f}")
+
+
+if __name__ == "__main__":
+    run_stable_alpha()
+
+================================================================================
+FILE: agents/alpha_agent/run_structured_alpha_upgrade.py
+
+from pathlib import Path
+import contextlib
+import io
+import random
+import sys
+import warnings
+
+import numpy as np
+import pandas as pd
+import torch
+from torch.optim import Adam
+from torch.utils.data import DataLoader, Dataset
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from agents.alpha_agent.dataset_builder import (
+    GLOBAL_CONTEXT_FEATURES,
+    REGIME_TO_ID,
+    SPLIT_DATE,
+    load_training_dataframe,
+    set_active_features,
+)
+from agents.alpha_agent.loss_functions import masked_mse_loss, masked_pairwise_ranking_loss
+from agents.alpha_agent.neuroquant_model import NeuroQuantAlphaModel
+
+
+warnings.filterwarnings("ignore", message="enable_nested_tensor is True")
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+MODEL_PATH = PROJECT_ROOT / "models" / "neuroquant_alpha_model.pt"
+MODEL_TYPE = "Transformer"
+SEED = 42
+TARGET_HORIZON = 10
+SEQUENCE_LENGTH = 30
+EPOCHS = 8
+BATCH_SIZE = 64
+LEARNING_RATE = 1e-4
+TOP_K_FRACTION = 0.10
+MAX_FEATURES = 30
+MAX_SAMPLE_TIMESTAMPS = 1000
+
+FEATURE_CANDIDATES = [
+    "sma_50",
+    "RSI_14",
+    "momentum_20",
+    "volatility_20",
+    "vol_adjusted_return_1",
+    "rank_return_1",
+    "breadth_up_pct",
+    "breadth_above_sma50_pct",
+    "breadth_dispersion",
+    "regime_change_flag",
+    "time_since_regime_change",
+    "previous_regime_state",
+    "asset_market_corr_20",
+    "correlation_cluster_strength",
+    "volume_spike",
+    "abnormal_volume_indicator",
+    "high_vol_regime_flag",
+    "lag_rank_return_1",
+    "momentum_20_lag_1",
+    "momentum_20_lag_2",
+    "momentum_20_lag_5",
+    "volatility_20_lag_1",
+    "volatility_20_lag_2",
+    "volatility_20_lag_5",
+    "rank_return_1_lag_1",
+    "rank_return_1_lag_2",
+    "rank_return_1_lag_5",
+    "volume_spike_lag_1",
+    "volume_spike_lag_2",
+    "volume_spike_lag_5",
+    "momentum_20_zscore_20",
+    "vol_adjusted_return_1_zscore_20",
+    "asset_market_corr_20_zscore_20",
+    "volume_spike_zscore_20",
+    "momentum_volatility_interaction",
+    "return_regime_interaction",
+]
+
+FEATURE_GROUPS = {
+    "momentum": {
+        "momentum_20",
+        "rank_return_1",
+        "lag_rank_return_1",
+        "momentum_20_lag_1",
+        "momentum_20_lag_2",
+        "momentum_20_lag_5",
+        "rank_return_1_lag_1",
+        "rank_return_1_lag_2",
+        "rank_return_1_lag_5",
+        "momentum_20_zscore_20",
+        "vol_adjusted_return_1",
+        "vol_adjusted_return_1_zscore_20",
+    },
+    "volatility": {
+        "volatility_20",
+        "high_vol_regime_flag",
+        "volatility_20_lag_1",
+        "volatility_20_lag_2",
+        "volatility_20_lag_5",
+        "momentum_volatility_interaction",
+    },
+    "regime": {
+        "regime_change_flag",
+        "time_since_regime_change",
+        "previous_regime_state",
+        "return_regime_interaction",
+        "breadth_up_pct",
+        "breadth_above_sma50_pct",
+        "breadth_dispersion",
+    },
+    "volume": {
+        "volume_spike",
+        "abnormal_volume_indicator",
+        "volume_spike_lag_1",
+        "volume_spike_lag_2",
+        "volume_spike_lag_5",
+        "volume_spike_zscore_20",
+    },
+    "correlation": {
+        "asset_market_corr_20",
+        "correlation_cluster_strength",
+        "asset_market_corr_20_zscore_20",
+    },
+}
+
+
+class AlphaClassificationDataset(Dataset):
+    def __init__(self, samples):
+        self.samples = samples
+
+    def __len__(self):
+        return len(self.samples)
+
+    def __getitem__(self, idx):
+        sample = self.samples[idx]
+        return (
+            torch.from_numpy(sample["features"]),
+            torch.from_numpy(sample["regimes"]),
+            torch.from_numpy(sample["target"]),
+            torch.from_numpy(sample["mask"]),
+            torch.from_numpy(sample["future_return_10"]),
+        )
+
+
+def set_seed(seed=SEED):
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+    random.seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+
+def _rolling_zscore(series, window=20):
+    mean = series.rolling(window, min_periods=5).mean()
+    std = series.rolling(window, min_periods=5).std()
+    return (series - mean) / (std + 1e-6)
+
+
+def _centered_rank(series):
+    ranked = series.rank(pct=True)
+    return ranked - 0.5
+
+
+def _engineer_research_features(df):
+    df = df.sort_values(["symbol", "timestamp"]).reset_index(drop=True).copy()
+    grouped = df.groupby("symbol", sort=False)
+
+    lag_sources = {
+        "momentum_20": [1, 2, 5],
+        "volatility_20": [1, 2, 5],
+        "rank_return_1": [1, 2, 5],
+        "volume_spike": [1, 2, 5],
+    }
+    for feature_name, lags in lag_sources.items():
+        for lag in lags:
+            df[f"{feature_name}_lag_{lag}"] = grouped[feature_name].shift(lag)
+
+    rolling_zscore_sources = [
+        "momentum_20",
+        "vol_adjusted_return_1",
+        "asset_market_corr_20",
+        "volume_spike",
+    ]
+    for feature_name in rolling_zscore_sources:
+        df[f"{feature_name}_zscore_20"] = grouped[feature_name].transform(_rolling_zscore)
+
+    regime_id = df["regime_label"].map(REGIME_TO_ID).fillna(0.0).astype(float)
+    df["momentum_volatility_interaction"] = df["momentum_20"] * df["volatility_20"]
+    df["return_regime_interaction"] = df["log_return_1"] * regime_id
+
+    df["future_return_10"] = grouped["log_return_1"].transform(
+        lambda series: series.rolling(TARGET_HORIZON).sum().shift(-TARGET_HORIZON)
+    )
+    return df
+
+
+def _add_target_signal(df):
+    df = df.copy()
+    df["target_signal"] = df.groupby("timestamp")["future_return_10"].transform(_centered_rank)
+    df["target_signal"] = df["target_signal"].clip(-0.5, 0.5)
+    return df
+
+
+def _safe_cross_sectional_ic(group, feature_name):
+    sample = group[[feature_name, "future_return_10"]].replace([np.inf, -np.inf], np.nan).dropna()
+    if len(sample) < 8:
+        return np.nan
+    if sample[feature_name].nunique() < 2 or sample["future_return_10"].nunique() < 2:
+        return np.nan
+    return float(sample[feature_name].corr(sample["future_return_10"], method="spearman"))
+
+
+def _select_top_features(train_df):
+    selection_timestamps = sorted(train_df["timestamp"].unique())[-MAX_SAMPLE_TIMESTAMPS:]
+    selection_df = train_df[train_df["timestamp"].isin(selection_timestamps)].copy()
+    grouped = list(selection_df.groupby("timestamp", sort=True))
+    rows = []
+    for feature_name in FEATURE_CANDIDATES:
+        ic_values = []
+        for _, group in grouped:
+            ic = _safe_cross_sectional_ic(group, feature_name)
+            if pd.notna(ic):
+                ic_values.append(ic)
+
+        if ic_values:
+            ic_series = pd.Series(ic_values, dtype=float)
+            corr_mean = float(ic_series.mean())
+            corr_std = float(ic_series.std(ddof=0)) if len(ic_series) > 1 else 0.0
+            stability = corr_std
+            score = abs(corr_mean) / (corr_std + 1e-6)
+        else:
+            corr_mean = 0.0
+            stability = float("inf")
+            score = 0.0
+
+        group_name = next((name for name, members in FEATURE_GROUPS.items() if feature_name in members), "other")
+        rows.append(
+            {
+                "feature_name": feature_name,
+                "correlation": corr_mean,
+                "stability": stability,
+                "score": score,
+                "group": group_name,
+            }
+        )
+
+    feature_stats = pd.DataFrame(rows).sort_values(["score", "correlation", "stability"], ascending=[False, False, True])
+    selected = []
+    for group_name in ["momentum", "volatility", "regime", "volume", "correlation"]:
+        group_features = feature_stats[feature_stats["group"] == group_name]["feature_name"].tolist()
+        for feature_name in group_features[:4]:
+            if feature_name not in selected:
+                selected.append(feature_name)
+
+    for feature_name in feature_stats["feature_name"]:
+        if feature_name not in selected:
+            selected.append(feature_name)
+        if len(selected) >= MAX_FEATURES:
+            break
+
+    return selected[:MAX_FEATURES]
+
+
+def _normalize_features(train_df, test_df, selected_features):
+    selected_global = [feature for feature in selected_features if feature in set(GLOBAL_CONTEXT_FEATURES)]
+    train_features = train_df[selected_features].replace([np.inf, -np.inf], np.nan)
+    fill_values = train_features.median(numeric_only=True).fillna(0.0)
+    train_feature_frame = train_features.fillna(fill_values)
+
+    if selected_global:
+        global_means = train_feature_frame[selected_global].mean().fillna(0.0)
+        global_stds = train_feature_frame[selected_global].std().replace(0, np.nan).fillna(1.0)
+    else:
+        global_means = pd.Series(dtype=float)
+        global_stds = pd.Series(dtype=float)
+
+    def normalize_split(split_df):
+        feature_frame = split_df[selected_features].replace([np.inf, -np.inf], np.nan).fillna(fill_values)
+        timestamp_index = split_df["timestamp"]
+        normalized = pd.DataFrame(index=feature_frame.index, columns=selected_features, dtype=np.float32)
+
+        cross_sectional = [feature for feature in selected_features if feature not in selected_global]
+        if cross_sectional:
+            means = feature_frame[cross_sectional].groupby(timestamp_index).transform("mean")
+            stds = feature_frame[cross_sectional].groupby(timestamp_index).transform("std")
+            normalized[cross_sectional] = (feature_frame[cross_sectional] - means) / (stds + 1e-6)
+
+        if selected_global:
+            normalized[selected_global] = (feature_frame[selected_global] - global_means[selected_global]) / (global_stds[selected_global] + 1e-6)
+
+        normalized = normalized.replace([np.inf, -np.inf], np.nan).fillna(0.0).clip(-5.0, 5.0)
+        split_df = split_df.copy()
+        split_df[selected_features] = normalized.astype(np.float32)
+        return split_df
+
+    return normalize_split(train_df), normalize_split(test_df)
+
+
+def build_research_frames():
+    with contextlib.redirect_stdout(io.StringIO()):
+        raw_df = load_training_dataframe()
+
+    df = _engineer_research_features(raw_df)
+    df = df.replace([np.inf, -np.inf], np.nan)
+    df = df.dropna(subset=["future_return_10", "regime_label"]).reset_index(drop=True)
+    df["timestamp"] = pd.to_datetime(df["timestamp"])
+
+    train_df = _add_target_signal(df[df["timestamp"] < SPLIT_DATE].copy())
+    test_df = _add_target_signal(df[df["timestamp"] >= SPLIT_DATE].copy())
+
+    selected_features = _select_top_features(train_df)
+    train_df, test_df = _normalize_features(train_df, test_df, selected_features)
+    return train_df.reset_index(drop=True), test_df.reset_index(drop=True), selected_features
+
+
+def _build_samples(split_df, selected_features, max_timestamps=MAX_SAMPLE_TIMESTAMPS):
+    symbol_frames = {}
+    timestamp_lookup = {}
+    for symbol, symbol_df in split_df.groupby("symbol", sort=False):
+        ordered = symbol_df.sort_values("timestamp").reset_index(drop=True)
+        symbol_frames[symbol] = ordered
+        timestamp_lookup[symbol] = {timestamp: idx for idx, timestamp in enumerate(ordered["timestamp"])}
+
+    grouped_by_timestamp = {timestamp: group.sort_values("symbol") for timestamp, group in split_df.groupby("timestamp", sort=True)}
+    candidate_timestamps = sorted(grouped_by_timestamp.keys())[-max_timestamps:]
+    samples = []
+    for timestamp in candidate_timestamps:
+        group = grouped_by_timestamp[timestamp]
+        ordered_symbols = group["symbol"].tolist()
+        if len(ordered_symbols) < 10:
+            continue
+
+        asset_payloads = []
+        for symbol in ordered_symbols:
+            symbol_df = symbol_frames[symbol]
+            end_idx = timestamp_lookup[symbol].get(timestamp)
+            if end_idx is None or end_idx < SEQUENCE_LENGTH - 1:
+                continue
+
+            window = symbol_df.iloc[end_idx - SEQUENCE_LENGTH + 1 : end_idx + 1]
+            if len(window) != SEQUENCE_LENGTH:
+                continue
+
+            label = window.iloc[-1]["target_signal"]
+            mask = 1.0 if pd.notna(label) else 0.0
+            label = float(label) if pd.notna(label) else 0.0
+            future_return_10 = float(window.iloc[-1]["future_return_10"])
+
+            asset_payloads.append(
+                {
+                    "features": window[selected_features].to_numpy(dtype=np.float32, copy=False),
+                    "regime": np.int64(REGIME_TO_ID.get(window.iloc[-1]["regime_label"], 0)),
+                    "target": np.float32(label),
+                    "mask": np.float32(mask),
+                    "future_return_10": np.float32(future_return_10 if np.isfinite(future_return_10) else 0.0),
+                }
+            )
+
+        if len(asset_payloads) < 10:
+            continue
+
+        samples.append(
+            {
+                "features": np.stack([payload["features"] for payload in asset_payloads], axis=0).astype(np.float32),
+                "regimes": np.asarray([payload["regime"] for payload in asset_payloads], dtype=np.int64),
+                "target": np.asarray([payload["target"] for payload in asset_payloads], dtype=np.float32),
+                "mask": np.asarray([payload["mask"] for payload in asset_payloads], dtype=np.float32),
+                "future_return_10": np.asarray([payload["future_return_10"] for payload in asset_payloads], dtype=np.float32),
+            }
+        )
+
+    return samples
+
+
+def _collate_batch(batch):
+    max_assets = max(item[0].shape[0] for item in batch)
+    batch_size = len(batch)
+    seq_len = batch[0][0].shape[1]
+    feature_dim = batch[0][0].shape[2]
+
+    features = torch.zeros((batch_size, max_assets, seq_len, feature_dim), dtype=torch.float32)
+    regimes = torch.zeros((batch_size, max_assets), dtype=torch.long)
+    target = torch.zeros((batch_size, max_assets), dtype=torch.float32)
+    mask = torch.zeros((batch_size, max_assets), dtype=torch.float32)
+    future_return_10 = torch.zeros((batch_size, max_assets), dtype=torch.float32)
+
+    for idx, item in enumerate(batch):
+        asset_count = item[0].shape[0]
+        features[idx, :asset_count] = item[0]
+        regimes[idx, :asset_count] = item[1]
+        target[idx, :asset_count] = item[2]
+        mask[idx, :asset_count] = item[3]
+        future_return_10[idx, :asset_count] = item[4]
+
+    return features, regimes, target, mask, future_return_10
+
+
+def train_model(train_dataset, feature_dim):
+    set_seed(SEED)
+    dataloader = DataLoader(
+        train_dataset,
+        batch_size=BATCH_SIZE,
+        shuffle=True,
+        num_workers=0,
+        pin_memory=torch.cuda.is_available(),
+        collate_fn=_collate_batch,
+    )
+
+    model = NeuroQuantAlphaModel(feature_dim=feature_dim, model_type=MODEL_TYPE.lower()).to(device)
+    optimizer = Adam(model.parameters(), lr=LEARNING_RATE)
+
+    for _epoch in range(EPOCHS):
+        model.train()
+        for features, regimes, target, mask, _future_return_10 in dataloader:
+            features = features.to(device)
+            regimes = regimes.to(device)
+            target = target.to(device)
+            mask = mask.to(device)
+
+            optimizer.zero_grad(set_to_none=True)
+            logits = model(features, regimes)
+            ranking_loss = masked_pairwise_ranking_loss(logits, target, mask)
+            mse_loss = masked_mse_loss(logits, target, mask)
+            loss = 0.7 * ranking_loss + 0.3 * mse_loss
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            optimizer.step()
+
+    return model
+
+
+def _safe_spearman(pred, target):
+    if len(pred) < 5:
+        return np.nan
+    pred_series = pd.Series(pred)
+    target_series = pd.Series(target)
+    if pred_series.nunique() < 2 or target_series.nunique() < 2:
+        return np.nan
+    return float(pred_series.corr(target_series, method="spearman"))
+
+
+def evaluate_model(model, test_dataset):
+    dataloader = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=0, collate_fn=_collate_batch)
+    model.eval()
+
+    ic_values = []
+    direction_hits = []
+    top_k_excess_returns = []
+
+    with torch.no_grad():
+        for features, regimes, _target, mask, future_return_10 in dataloader:
+            predictions = model(features.to(device), regimes.to(device)).cpu()
+            mask = mask.cpu()
+
+            for batch_idx in range(predictions.shape[0]):
+                batch_pred = predictions[batch_idx].numpy()
+                batch_future_returns = future_return_10[batch_idx].numpy()
+                valid = np.isfinite(batch_future_returns) & (mask[batch_idx].numpy() > 0.5)
+                if valid.sum() < 10:
+                    continue
+
+                batch_pred = batch_pred[valid]
+                batch_future_returns = batch_future_returns[valid]
+                ic = _safe_spearman(batch_pred, batch_future_returns)
+                if np.isfinite(ic):
+                    ic_values.append(ic)
+
+                centered_returns = batch_future_returns - float(batch_future_returns.mean())
+                direction_hits.extend((np.sign(batch_pred) == np.sign(centered_returns)).astype(np.float32).tolist())
+
+                k = max(1, int(np.ceil(len(batch_pred) * TOP_K_FRACTION)))
+                top_idx = np.argsort(batch_pred)[-k:]
+                top_k_excess_returns.append(float(batch_future_returns[top_idx].mean() - batch_future_returns.mean()))
+
+    correlation = float(np.mean(ic_values)) if ic_values else 0.0
+    directional_accuracy = float(np.mean(direction_hits)) if direction_hits else 0.0
+    top_k_return = float(np.mean(top_k_excess_returns)) if top_k_excess_returns else 0.0
+
+    return {
+        "correlation": correlation,
+        "directional_accuracy": directional_accuracy,
+        "top_k_return": top_k_return,
+    }
+
+
+def main():
+    set_seed(SEED)
+    train_df, test_df, selected_features = build_research_frames()
+    set_active_features(selected_features, persist=True)
+
+    train_samples = _build_samples(train_df, selected_features)
+    test_samples = _build_samples(test_df, selected_features)
+    train_dataset = AlphaClassificationDataset(train_samples)
+    test_dataset = AlphaClassificationDataset(test_samples)
+
+    model = train_model(train_dataset, feature_dim=len(selected_features))
+    metrics = evaluate_model(model, test_dataset)
+
+    MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
+    torch.save(model.state_dict(), MODEL_PATH)
+
+    print(f"CORRELATION={metrics['correlation']:.6f}")
+    print(f"DIRECTIONAL_ACCURACY={metrics['directional_accuracy']:.6f}")
+    print(f"TOP_K_RETURN={metrics['top_k_return']:.6f}")
+
+
+if __name__ == "__main__":
+    main()
+
+================================================================================
+FILE: agents/alpha_agent/train_alpha_model.py
+
+from pathlib import Path
+import random
+import sys
+
+import numpy as np
+import torch
+from torch.optim import Adam
+from torch.utils.data import DataLoader
+
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from agents.alpha_agent.dataset_builder import build_alpha_dataset, get_active_features
+from agents.alpha_agent.loss_functions import masked_mse_loss
+from agents.alpha_agent.neuroquant_model import NeuroQuantAlphaModel
+
+
+EPOCHS = 20
+BATCH_SIZE = 1
+LEARNING_RATE = 5e-4
+MAX_FEATURE_ABS = 20.0
+
+MODEL_PATH = PROJECT_ROOT / "models" / "neuroquant_alpha_model.pt"
+
+
+def set_seed(seed=42):
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+    random.seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+
+def train_alpha_model(
+    model_path=MODEL_PATH,
+    epochs=EPOCHS,
+    learning_rate=LEARNING_RATE,
+    return_metrics=False,
+):
+    set_seed(42)
+    active_features = get_active_features()
+
+    print("Using device:", device)
+    print("Loading dataset...")
+    print(f"Active features ({len(active_features)}): {', '.join(active_features)}")
+    dataset = build_alpha_dataset(split="train")
+
+    print(f"Total samples: {len(dataset)}")
+
+    if len(dataset) == 0:
+        raise RuntimeError("Alpha dataset is empty; cannot train model")
+
+    dataloader = DataLoader(
+        dataset,
+        batch_size=BATCH_SIZE,
+        shuffle=True,
+        num_workers=0,
+        pin_memory=True,
+    )
+
+    model = NeuroQuantAlphaModel(feature_dim=len(active_features)).to(device)
+    optimizer = Adam(model.parameters(), lr=learning_rate)
+    last_avg_loss = float("nan")
+
+    for epoch in range(1, epochs + 1):
+        model.train()
+        epoch_loss = 0.0
+        valid_batches = 0
+
+        print(f"\nEpoch {epoch}/{epochs}")
+
+        for batch_idx, (features, regime_ids, targets, masks) in enumerate(dataloader):
+            if not torch.isfinite(features).all():
+                nan_count = int(torch.isnan(features).sum().item())
+                inf_count = int(torch.isinf(features).sum().item())
+                print(
+                    f"Non-finite features detected at epoch {epoch}, batch {batch_idx}: "
+                    f"nan={nan_count}, inf={inf_count}"
+                )
+                features = torch.nan_to_num(features, nan=0.0, posinf=0.0, neginf=0.0)
+
+            if not torch.isfinite(targets).all():
+                nan_count = int(torch.isnan(targets).sum().item())
+                inf_count = int(torch.isinf(targets).sum().item())
+                print(
+                    f"Non-finite targets detected at epoch {epoch}, batch {batch_idx}: "
+                    f"nan={nan_count}, inf={inf_count}"
+                )
+                targets = torch.nan_to_num(targets, nan=0.0, posinf=0.0, neginf=0.0)
+
+            batch_feature_abs_max = float(features.abs().max().item())
+            if batch_idx == 0:
+                print(
+                    "Batch 1 stats -> "
+                    f"feature_range=[{features.min().item():.4f}, {features.max().item():.4f}], "
+                    f"target_range=[{targets.min().item():.6f}, {targets.max().item():.6f}]"
+                )
+            elif batch_feature_abs_max > MAX_FEATURE_ABS:
+                print(
+                    f"Extreme feature range detected at epoch {epoch}, batch {batch_idx}: "
+                    f"abs_max={batch_feature_abs_max:.4f}"
+                )
+
+            features = features.to(device, non_blocking=True)
+            regime_ids = regime_ids.to(device, non_blocking=True)
+            targets = targets.to(device, non_blocking=True)
+            masks = masks.to(device, non_blocking=True)
+
+            optimizer.zero_grad(set_to_none=True)
+
+            predicted_scores = model(features, regime_ids)
+            if not torch.isfinite(predicted_scores).all():
+                print(f"Non-finite predictions at epoch {epoch}, batch {batch_idx}; skipping batch")
+                continue
+
+            loss = masked_mse_loss(predicted_scores, targets, masks)
+            if not torch.isfinite(loss):
+                print(f"Non-finite loss at epoch {epoch}, batch {batch_idx}; skipping batch")
+                continue
+
+            loss.backward()
+            grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+
+            if not torch.isfinite(grad_norm):
+                print(f"Non-finite gradient norm at epoch {epoch}, batch {batch_idx}; skipping optimizer step")
+                optimizer.zero_grad(set_to_none=True)
+                continue
+
+            optimizer.step()
+
+            epoch_loss += float(loss.item())
+            valid_batches += 1
+
+        if valid_batches == 0:
+            raise RuntimeError(f"No valid batches were processed in epoch {epoch}")
+
+        last_avg_loss = epoch_loss / valid_batches
+        print(f"Loss: {last_avg_loss:.6f}")
+
+    model_path = Path(model_path)
+    model_path.parent.mkdir(parents=True, exist_ok=True)
+    torch.save(model.state_dict(), model_path)
+
+    print("\nTraining completed")
+    print(f"Model saved to -> {model_path}")
+
+    metrics = {
+        "final_loss": last_avg_loss,
+        "model_path": str(model_path),
+        "feature_count": len(active_features),
+    }
+    if return_metrics:
+        return metrics
+    return metrics
+
+
+if __name__ == "__main__":
+    train_alpha_model()
+
+================================================================================
+FILE: agents/asset_universe_agent/__init__.py
+
+
+
+================================================================================
+FILE: agents/asset_universe_agent/load_asset_universe.py
+
+from pathlib import Path
+import re
+import sys
+
+import requests
+from bs4 import BeautifulSoup
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from backend.database.models.asset import Asset
+from backend.database.postgres import SessionLocal
+
+
+SP500_URL = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
+TICKER_PATTERN = re.compile(r"^[A-Z0-9\-=/]+$")
+
+NASDAQ100 = [
+    "AAPL","MSFT","NVDA","AMZN","META","GOOGL","GOOG","TSLA","AVGO","COST",
+    "ADBE","NFLX","PEP","CSCO","AMD","TMUS","INTC","QCOM","TXN","AMAT",
+    "INTU","ISRG","BKNG","ADP","MDLZ","LRCX","MU","PANW","SNPS","CDNS",
+    "KLAC","CRWD","FTNT","WDAY","ADSK","ORLY","REGN","VRTX","DXCM","MELI",
+    "KDP","IDXX","PAYX","MRNA","TEAM","GILD","CTAS","ODFL","MNST","CSX",
+    "NXPI","PCAR","ROST","CPRT","FANG","ANSS","EXC","FAST","BIIB","SIRI",
+    "DLTR","VRSK","KHC","AEP","BKR","XEL","AZN","EA","LULU","WBD",
+    "GEHC","ILMN","ALGN","MAR","MCHP","ABNB","CHTR","MRVL","ADI","PDD",
+    "DDOG","ZS","OKTA","DOCU","NET","MDB","SNOW","RIVN","LCID","PLTR",
+    "HOOD","COIN","ARM","SMCI","TTD","ON","GFS","ENPH","AMGN","CSGP"
+]
+
+CRYPTO = [
+    "BTC/USDT","ETH/USDT","SOL/USDT","XRP/USDT","BNB/USDT","ADA/USDT","DOGE/USDT","AVAX/USDT","DOT/USDT","LINK/USDT",
+    "TRX/USDT","MATIC/USDT","LTC/USDT","BCH/USDT","ATOM/USDT","ETC/USDT","XLM/USDT","NEAR/USDT","APT/USDT","ARB/USDT",
+    "OP/USDT","FIL/USDT","ICP/USDT","INJ/USDT","RNDR/USDT","SUI/USDT","SEI/USDT","PEPE/USDT","SHIB/USDT","UNI/USDT",
+    "AAVE/USDT","MKR/USDT","SNX/USDT","CRV/USDT","LDO/USDT","DYDX/USDT","TIA/USDT","JUP/USDT","PYTH/USDT","WIF/USDT",
+    "FET/USDT","AGIX/USDT","OCEAN/USDT","GRT/USDT","IMX/USDT","SAND/USDT","MANA/USDT","AXS/USDT","RUNE/USDT","EGLD/USDT",
+    "KAS/USDT","STX/USDT","TON/USDT","NOT/USDT","ONDO/USDT","ENA/USDT","TAO/USDT","AR/USDT","GMX/USDT","COMP/USDT",
+    "SUSHI/USDT","1INCH/USDT","ZEC/USDT","DASH/USDT","NEO/USDT","QTUM/USDT","IOTA/USDT","ALGO/USDT","VET/USDT","THETA/USDT",
+    "FLOW/USDT","EOS/USDT","XTZ/USDT","KAVA/USDT","ROSE/USDT","CELO/USDT","CHZ/USDT","FTM/USDT","HBAR/USDT","MINA/USDT",
+    "KSM/USDT","ENS/USDT","BAL/USDT","YFI/USDT","ANKR/USDT","API3/USDT","WLD/USDT","BLUR/USDT","ACH/USDT","ASTR/USDT",
+    "BOME/USDT","BONK/USDT","CFX/USDT","CKB/USDT","DYM/USDT","JASMY/USDT","LRC/USDT","MASK/USDT","MEME/USDT","ORDI/USDT"
+]
+
+COMMODITIES = [
+    "GC=F","SI=F","CL=F","NG=F","HG=F","PL=F","PA=F",
+    "ZC=F","ZW=F","ZS=F","KC=F","SB=F","CC=F","CT=F",
+    "OJ=F","RB=F","HO=F","BZ=F","LE=F","HE=F"
+]
+
+MACRO = [
+    "FEDFUNDS","CPIAUCSL","UNRATE","GDP","PCE",
+    "M2SL","INDPRO","PAYEMS","DGS10","DGS2",
+    "UMCSENT","HOUST","ICSA","CP","DEXUSEU",
+    "DEXUSUK","DEXJPUS","DEXCHUS","DTB3","T10Y2Y"
+]
+
+FX = [
+    "EURUSD=X","GBPUSD=X","USDJPY=X","AUDUSD=X","USDCAD=X",
+    "USDCHF=X","NZDUSD=X","EURGBP=X","EURJPY=X","GBPJPY=X",
+    "AUDJPY=X","CHFJPY=X","EURCAD=X","EURAUD=X","EURNZD=X",
+    "GBPCAD=X","GBPAUD=X","AUDCAD=X","AUDNZD=X","CADJPY=X"
+]
+
+MACRO_NAMES = {
+    "FEDFUNDS": "Federal Funds Rate",
+    "CPIAUCSL": "Consumer Price Index",
+    "UNRATE": "Unemployment Rate",
+    "GDP": "Gross Domestic Product",
+    "PCE": "Personal Consumption Expenditures",
+    "M2SL": "M2 Money Stock",
+    "INDPRO": "Industrial Production Index",
+    "PAYEMS": "Total Nonfarm Payrolls",
+    "DGS10": "10-Year Treasury Yield",
+    "DGS2": "2-Year Treasury Yield",
+    "UMCSENT": "Michigan Consumer Sentiment",
+    "HOUST": "Housing Starts",
+    "ICSA": "Initial Claims",
+    "CP": "Corporate Profits",
+    "DEXUSEU": "USD to Euro FX Rate",
+    "DEXUSUK": "USD to British Pound FX Rate",
+    "DEXJPUS": "Japanese Yen to USD FX Rate",
+    "DEXCHUS": "Chinese Yuan to USD FX Rate",
+    "DTB3": "3-Month Treasury Bill",
+    "T10Y2Y": "10Y-2Y Treasury Spread",
+}
+
+COMMODITY_NAMES = {
+    "GC=F": "Gold Futures",
+    "SI=F": "Silver Futures",
+    "CL=F": "Crude Oil Futures",
+    "NG=F": "Natural Gas Futures",
+    "HG=F": "Copper Futures",
+    "PL=F": "Platinum Futures",
+    "PA=F": "Palladium Futures",
+    "ZC=F": "Corn Futures",
+    "ZW=F": "Wheat Futures",
+    "ZS=F": "Soybean Futures",
+    "KC=F": "Coffee Futures",
+    "SB=F": "Sugar Futures",
+    "CC=F": "Cocoa Futures",
+    "CT=F": "Cotton Futures",
+    "OJ=F": "Orange Juice Futures",
+    "RB=F": "RBOB Gasoline Futures",
+    "HO=F": "Heating Oil Futures",
+    "BZ=F": "Brent Crude Oil Futures",
+    "LE=F": "Live Cattle Futures",
+    "HE=F": "Lean Hogs Futures",
+}
+
+FX_NAMES = {
+    "EURUSD=X": "Euro / US Dollar",
+    "GBPUSD=X": "British Pound / US Dollar",
+    "USDJPY=X": "US Dollar / Japanese Yen",
+    "AUDUSD=X": "Australian Dollar / US Dollar",
+    "USDCAD=X": "US Dollar / Canadian Dollar",
+    "USDCHF=X": "US Dollar / Swiss Franc",
+    "NZDUSD=X": "New Zealand Dollar / US Dollar",
+    "EURGBP=X": "Euro / British Pound",
+    "EURJPY=X": "Euro / Japanese Yen",
+    "GBPJPY=X": "British Pound / Japanese Yen",
+    "AUDJPY=X": "Australian Dollar / Japanese Yen",
+    "CHFJPY=X": "Swiss Franc / Japanese Yen",
+    "EURCAD=X": "Euro / Canadian Dollar",
+    "EURAUD=X": "Euro / Australian Dollar",
+    "EURNZD=X": "Euro / New Zealand Dollar",
+    "GBPCAD=X": "British Pound / Canadian Dollar",
+    "GBPAUD=X": "British Pound / Australian Dollar",
+    "AUDCAD=X": "Australian Dollar / Canadian Dollar",
+    "AUDNZD=X": "Australian Dollar / New Zealand Dollar",
+    "CADJPY=X": "Canadian Dollar / Japanese Yen",
+}
+
+
+def load_sp500_assets():
+    print("Fetching S&P500 asset universe...")
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (NeuroQuant Data Collector)"
+    }
+
+    response = requests.get(SP500_URL, headers=headers, timeout=20)
+    response.raise_for_status()
+
+    soup = BeautifulSoup(response.text, "html.parser")
+    table = soup.find("table", {"id": "constituents"})
+
+    if table is None:
+        raise RuntimeError("S&P500 constituents table not found on Wikipedia")
+
+    tbody = table.find("tbody")
+    if tbody is None:
+        raise RuntimeError("S&P500 constituents table body not found on Wikipedia")
+
+    rows = tbody.find_all("tr")
+    assets = []
+    seen_symbols = set()
+
+    for row in rows:
+        cols = row.find_all("td")
+        if len(cols) < 4:
+            continue
+
+        symbol = cols[0].text.strip().replace(".", "-")
+        name = cols[1].text.strip()
+        sector = cols[2].text.strip()
+
+        if not symbol or not TICKER_PATTERN.fullmatch(symbol) or symbol in seen_symbols:
+            continue
+
+        assets.append(
+            {
+                "symbol": symbol,
+                "name": name,
+                "asset_type": "stock",
+                "exchange": "NYSE/NASDAQ",
+                "sector": sector,
+                "active": True,
+            }
+        )
+        seen_symbols.add(symbol)
+
+    if len(assets) < 400:
+        raise RuntimeError("Parsed S&P500 list is suspiciously small")
+
+    print(f"S&P500 loaded: {len(assets)}")
+    return assets
+
+
+def load_nasdaq_assets():
+    assets = [
+        {
+            "symbol": symbol,
+            "name": symbol,
+            "asset_type": "stock",
+            "exchange": "NASDAQ",
+            "sector": None,
+            "active": True,
+        }
+        for symbol in NASDAQ100
+    ]
+    print(f"NASDAQ100 loaded: {len(assets)}")
+    return assets
+
+
+def load_crypto_assets():
+    assets = [
+        {
+            "symbol": symbol,
+            "name": symbol,
+            "asset_type": "crypto",
+            "exchange": "crypto",
+            "sector": None,
+            "active": True,
+        }
+        for symbol in CRYPTO
+    ]
+    print(f"Crypto loaded: {len(assets)}")
+    return assets
+
+
+def load_commodity_assets():
+    assets = [
+        {
+            "symbol": symbol,
+            "name": COMMODITY_NAMES.get(symbol, symbol),
+            "asset_type": "commodity",
+            "exchange": "Yahoo Finance",
+            "sector": None,
+            "active": True,
+        }
+        for symbol in COMMODITIES
+    ]
+    print(f"Commodities loaded: {len(assets)}")
+    return assets
+
+
+def load_macro_assets():
+    assets = [
+        {
+            "symbol": symbol,
+            "name": MACRO_NAMES.get(symbol, symbol),
+            "asset_type": "macro",
+            "exchange": "FRED",
+            "sector": None,
+            "active": True,
+        }
+        for symbol in MACRO
+    ]
+    print(f"Macro loaded: {len(assets)}")
+    return assets
+
+
+def load_fx_assets():
+    assets = [
+        {
+            "symbol": symbol,
+            "name": FX_NAMES.get(symbol, symbol),
+            "asset_type": "fx",
+            "exchange": "Yahoo Finance",
+            "sector": None,
+            "active": True,
+        }
+        for symbol in FX
+    ]
+    print(f"FX loaded: {len(assets)}")
+    return assets
+
+
+def insert_assets(db, asset_payloads):
+    if not asset_payloads:
+        return 0, 0
+
+    deduped_assets = {}
+    for asset in asset_payloads:
+        symbol = asset.get("symbol")
+        if symbol and TICKER_PATTERN.fullmatch(symbol):
+            deduped_assets[symbol] = asset
+
+    symbols = list(deduped_assets.keys())
+    existing_symbols = {
+        row[0] for row in db.query(Asset.symbol).filter(Asset.symbol.in_(symbols)).all()
+    }
+
+    new_assets = [
+        Asset(**asset)
+        for symbol, asset in deduped_assets.items()
+        if symbol not in existing_symbols
+    ]
+
+    if new_assets:
+        db.bulk_save_objects(new_assets)
+        db.commit()
+
+    return len(new_assets), len(existing_symbols)
+
+
+def main():
+    print("Loading asset universe...")
+
+    db = SessionLocal()
+    try:
+        loaders = [
+            load_sp500_assets,
+            load_nasdaq_assets,
+            load_crypto_assets,
+            load_commodity_assets,
+            load_macro_assets,
+            load_fx_assets,
+        ]
+
+        total_processed = 0
+        total_inserted = 0
+        total_existing = 0
+
+        for loader in loaders:
+            assets = loader()
+            inserted, existing = insert_assets(db, assets)
+            total_processed += len(assets)
+            total_inserted += inserted
+            total_existing += existing
+
+        print(f"Total assets processed: {total_processed}")
+        print(f"New assets inserted: {total_inserted}")
+        print(f"Assets already existing: {total_existing}")
+    finally:
+        db.close()
+
+
+if __name__ == "__main__":
+    main()
+
+================================================================================
+FILE: agents/asset_universe_agent/select_clean_assets.py
+
+from pathlib import Path
+import sys
+
+import numpy as np
+import pandas as pd
+from sqlalchemy import and_
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from agents.alpha_agent.dataset_builder import REGIME_TO_ID, STORED_FEATURE_COLUMNS
+from backend.database.models.asset_universe import AssetUniverse
+from backend.database.models.features import Features
+from backend.database.models.market_regime import MarketRegime
+from backend.database.postgres import SessionLocal
+
+
+MIN_TIMESTEPS = 500
+MAX_MISSING_RATIO = 0.05
+DEFAULT_TOP_N = 30
+
+
+def load_feature_dataframe(db):
+    query = (
+        db.query(
+            Features.symbol,
+            Features.timestamp,
+            *[getattr(Features, column) for column in STORED_FEATURE_COLUMNS],
+            MarketRegime.regime_label,
+        )
+        .join(
+            MarketRegime,
+            and_(
+                Features.symbol == MarketRegime.symbol,
+                Features.timestamp == MarketRegime.timestamp,
+            ),
+        )
+        .order_by(Features.symbol, Features.timestamp)
+    )
+
+    rows = query.all()
+    columns = ["symbol", "timestamp", *STORED_FEATURE_COLUMNS, "regime_label"]
+    if not rows:
+        return pd.DataFrame(columns=columns)
+
+    df = pd.DataFrame(rows, columns=columns)
+    df["timestamp"] = pd.to_datetime(df["timestamp"])
+    return df
+
+
+def score_assets(df, min_timesteps=MIN_TIMESTEPS, max_missing_ratio=MAX_MISSING_RATIO):
+    if df.empty:
+        return [], 0, 0
+
+    total_assets = int(df["symbol"].nunique())
+    qualified_assets = []
+
+    for symbol, group in df.groupby("symbol", sort=False):
+        row_count = len(group)
+        if row_count < min_timesteps:
+            continue
+
+        feature_frame = group[STORED_FEATURE_COLUMNS].apply(pd.to_numeric, errors="coerce")
+        missing_ratio = float(feature_frame.isna().mean().mean())
+        if missing_ratio > max_missing_ratio:
+            continue
+
+        raw_feature_values = feature_frame.to_numpy(dtype=np.float64, copy=True)
+        inf_mask = np.isinf(raw_feature_values)
+        nan_mask = np.isnan(raw_feature_values)
+        invalid_mask = inf_mask | nan_mask
+        invalid_count = int(invalid_mask.sum())
+        if invalid_count > int(max(1, row_count * len(STORED_FEATURE_COLUMNS) * max_missing_ratio)):
+            continue
+
+        if not group["regime_label"].isin(REGIME_TO_ID).all():
+            continue
+
+        finite_feature_frame = feature_frame.fillna(0.0)
+        if not np.isfinite(finite_feature_frame.to_numpy(dtype=np.float64, copy=False)).all():
+            continue
+
+        volatility_stability = float(pd.to_numeric(group["log_return_1"], errors="coerce").std(ddof=0) or 0.0)
+        score = float(row_count - (missing_ratio * 1000.0))
+
+        qualified_assets.append(
+            {
+                "symbol": symbol,
+                "score": score,
+                "data_length_score": int(row_count),
+                "missing_ratio": missing_ratio,
+                "volatility_stability": volatility_stability,
+            }
+        )
+
+    return qualified_assets, total_assets, len(qualified_assets)
+
+
+def save_selected_assets(db, selected_assets):
+    db.query(AssetUniverse).delete()
+
+    records = [
+        AssetUniverse(symbol=asset["symbol"], score=asset["score"])
+        for asset in selected_assets
+    ]
+
+    if records:
+        db.bulk_save_objects(records)
+    db.commit()
+
+
+def select_clean_assets(top_n=DEFAULT_TOP_N):
+    db = SessionLocal()
+    try:
+        df = load_feature_dataframe(db)
+        scored_assets, total_assets, filtered_count = score_assets(df)
+
+        scored_assets = sorted(scored_assets, key=lambda item: item["score"], reverse=True)
+        selected_assets = scored_assets[:top_n]
+        selected_symbols = [asset["symbol"] for asset in selected_assets]
+
+        save_selected_assets(db, selected_assets)
+
+        print(f"Total assets found: {total_assets}")
+        print(f"Assets after filtering: {filtered_count}")
+        print(f"Final selected assets ({len(selected_symbols)}): {', '.join(selected_symbols)}")
+
+        return selected_symbols
+    finally:
+        db.close()
+
+
+if __name__ == "__main__":
+    select_clean_assets()
+
+================================================================================
+FILE: agents/feature_agent/__init__.py
+
+
+================================================================================
+FILE: agents/feature_agent/generate_features.py
+
+from pathlib import Path
+import sys
+
+import numpy as np
+import pandas as pd
+from ta.momentum import RSIIndicator
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from backend.database.models.features import Features
+from backend.database.models.market_data import MarketData
+from backend.database.postgres import SessionLocal
+
+
+def to_float_or_none(value):
+    if isinstance(value, np.generic):
+        value = value.item()
+    if value is None or pd.isna(value):
+        return None
+    return float(value)
+
+
+def generate_features():
+    db = SessionLocal()
+    try:
+        symbols = [row[0] for row in db.query(MarketData.symbol).distinct().all()]
+
+        for symbol in symbols:
+            print(f"Generating features for {symbol}")
+
+            market_rows = (
+                db.query(MarketData)
+                .filter(MarketData.symbol == symbol)
+                .order_by(MarketData.timestamp)
+                .all()
+            )
+
+            if not market_rows:
+                continue
+
+            df = pd.DataFrame(
+                [
+                    {
+                        "timestamp": row.timestamp,
+                        "open": row.open,
+                        "high": row.high,
+                        "low": row.low,
+                        "close": row.close,
+                        "volume": row.volume,
+                    }
+                    for row in market_rows
+                ]
+            )
+
+            df = df.sort_values("timestamp").reset_index(drop=True)
+            df["return_1d"] = df["close"].pct_change()
+            df["sma_20"] = df["close"].rolling(20).mean()
+            df["sma_50"] = df["close"].rolling(50).mean()
+            df["volatility_20"] = df["close"].pct_change().rolling(20).std()
+            df["rsi_14"] = RSIIndicator(close=df["close"], window=14).rsi()
+
+            existing_timestamps = {
+                row[0]
+                for row in db.query(Features.timestamp)
+                .filter(Features.symbol == symbol)
+                .all()
+            }
+
+            inserted = 0
+            for _, feature_row in df.iterrows():
+                timestamp = feature_row["timestamp"]
+                if timestamp in existing_timestamps:
+                    continue
+
+                feature = Features(
+                    symbol=symbol,
+                    timestamp=timestamp,
+                    return_1d=to_float_or_none(feature_row["return_1d"]),
+                    sma_20=to_float_or_none(feature_row["sma_20"]),
+                    sma_50=to_float_or_none(feature_row["sma_50"]),
+                    volatility_20=to_float_or_none(feature_row["volatility_20"]),
+                    rsi_14=to_float_or_none(feature_row["rsi_14"]),
+                )
+                db.add(feature)
+                existing_timestamps.add(timestamp)
+                inserted += 1
+
+            db.commit()
+            print(f"Inserted features for {symbol}")
+    finally:
+        db.close()
+
+
+if __name__ == "__main__":
+    generate_features()
+
+================================================================================
+FILE: agents/feature_engineering_agent/__init__.py
+
+
+
+================================================================================
+FILE: agents/feature_engineering_agent/generate_features.py
+
+from pathlib import Path
+import sys
+
+import numpy as np
+import pandas as pd
+from sqlalchemy import MetaData, Table, select
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from backend.database.models.asset import Asset
+from backend.database.models.market_data import MarketData
+from backend.database.postgres import SessionLocal
+
+
+FEATURE_COLUMNS = [
+    "log_return_1",
+    "log_return_5",
+    "log_return_20",
+    "momentum_5",
+    "momentum_20",
+    "momentum_60",
+    "volatility_10",
+    "volatility_20",
+    "volatility_60",
+    "sma_20",
+    "sma_50",
+    "sma_200",
+    "price_vs_sma20",
+    "price_vs_sma50",
+    "price_vs_sma200",
+    "RSI_14",
+    "MACD",
+    "MACD_signal",
+    "MACD_hist",
+    "volume_change",
+    "volume_zscore",
+]
+
+
+def reflect_features_table(bind):
+    metadata = MetaData()
+    features_table = Table("features", metadata, autoload_with=bind)
+    columns = {column.name for column in features_table.columns}
+
+    missing_columns = {"timestamp", *FEATURE_COLUMNS} - columns
+    if missing_columns:
+        missing = ", ".join(sorted(missing_columns))
+        raise RuntimeError(f"features table is missing required columns: {missing}")
+
+    if "asset_id" not in columns and "symbol" not in columns:
+        raise RuntimeError("features table must contain either asset_id or symbol for asset linkage")
+
+    return features_table, columns
+
+
+def safe_float(value):
+    if value is None or pd.isna(value):
+        return None
+    if isinstance(value, np.generic):
+        value = value.item()
+    return float(value)
+
+
+
+def compute_features(df):
+    df = df.sort_values("timestamp").reset_index(drop=True).copy()
+
+    close = df["close"].astype(float)
+    volume = df["volume"].astype(float)
+    log_close = np.log(close.replace(0, np.nan))
+    returns = close.pct_change()
+
+    df["log_return_1"] = log_close.diff(1)
+    df["log_return_5"] = log_close.diff(5)
+    df["log_return_20"] = log_close.diff(20)
+
+    df["momentum_5"] = close.pct_change(5)
+    df["momentum_20"] = close.pct_change(20)
+    df["momentum_60"] = close.pct_change(60)
+
+    df["volatility_10"] = returns.rolling(10).std()
+    df["volatility_20"] = returns.rolling(20).std()
+    df["volatility_60"] = returns.rolling(60).std()
+
+    df["sma_20"] = close.rolling(20).mean()
+    df["sma_50"] = close.rolling(50).mean()
+    df["sma_200"] = close.rolling(200).mean()
+
+    df["price_vs_sma20"] = (close / df["sma_20"]) - 1
+    df["price_vs_sma50"] = (close / df["sma_50"]) - 1
+    df["price_vs_sma200"] = (close / df["sma_200"]) - 1
+
+    delta = close.diff()
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
+    avg_gain = gain.rolling(14).mean()
+    avg_loss = loss.rolling(14).mean()
+    rs = avg_gain / avg_loss.replace(0, np.nan)
+    df["RSI_14"] = 100 - (100 / (1 + rs))
+
+    ema_12 = close.ewm(span=12, adjust=False).mean()
+    ema_26 = close.ewm(span=26, adjust=False).mean()
+    df["MACD"] = ema_12 - ema_26
+    df["MACD_signal"] = df["MACD"].ewm(span=9, adjust=False).mean()
+    df["MACD_hist"] = df["MACD"] - df["MACD_signal"]
+
+    df["volume_change"] = volume.pct_change()
+    volume_mean = volume.rolling(20).mean()
+    volume_std = volume.rolling(20).std()
+    df["volume_zscore"] = (volume - volume_mean) / volume_std.replace(0, np.nan)
+
+    return df
+
+
+
+def prepare_insert_row(asset, row, column_names):
+    insert_row = {
+        "timestamp": row.timestamp,
+        "log_return_1": safe_float(row.log_return_1),
+        "log_return_5": safe_float(row.log_return_5),
+        "log_return_20": safe_float(row.log_return_20),
+        "momentum_5": safe_float(row.momentum_5),
+        "momentum_20": safe_float(row.momentum_20),
+        "momentum_60": safe_float(row.momentum_60),
+        "volatility_10": safe_float(row.volatility_10),
+        "volatility_20": safe_float(row.volatility_20),
+        "volatility_60": safe_float(row.volatility_60),
+        "sma_20": safe_float(row.sma_20),
+        "sma_50": safe_float(row.sma_50),
+        "sma_200": safe_float(row.sma_200),
+        "price_vs_sma20": safe_float(row.price_vs_sma20),
+        "price_vs_sma50": safe_float(row.price_vs_sma50),
+        "price_vs_sma200": safe_float(row.price_vs_sma200),
+        "RSI_14": safe_float(row.RSI_14),
+        "MACD": safe_float(row.MACD),
+        "MACD_signal": safe_float(row.MACD_signal),
+        "MACD_hist": safe_float(row.MACD_hist),
+        "volume_change": safe_float(row.volume_change),
+        "volume_zscore": safe_float(row.volume_zscore),
+    }
+
+    if "asset_id" in column_names:
+        insert_row["asset_id"] = asset.id
+    if "symbol" in column_names:
+        insert_row["symbol"] = asset.symbol
+
+    return {key: value for key, value in insert_row.items() if key in column_names}
+
+
+
+def generate_features():
+    print("Generating features...")
+
+    db = SessionLocal()
+    try:
+        features_table, column_names = reflect_features_table(db.bind)
+        assets = db.query(Asset).filter(Asset.active.is_(True)).order_by(Asset.symbol).all()
+
+        total_inserted = 0
+
+        for asset in assets:
+            print(f"Processing asset: {asset.symbol}")
+            market_rows = (
+                db.query(MarketData)
+                .filter(MarketData.symbol == asset.symbol)
+                .order_by(MarketData.timestamp)
+                .all()
+            )
+
+            if not market_rows:
+                print(f"Inserted 0 feature rows")
+                continue
+
+            df = pd.DataFrame(
+                [
+                    {
+                        "timestamp": row.timestamp,
+                        "open": row.open,
+                        "high": row.high,
+                        "low": row.low,
+                        "close": row.close,
+                        "volume": row.volume,
+                    }
+                    for row in market_rows
+                ]
+            )
+
+            feature_df = compute_features(df)
+            print(f"Computed features: {len(feature_df)} rows")
+
+            if "asset_id" in column_names:
+                existing_query = select(features_table.c.timestamp).where(features_table.c.asset_id == asset.id)
+            else:
+                existing_query = select(features_table.c.timestamp).where(features_table.c.symbol == asset.symbol)
+
+            existing_timestamps = {row[0] for row in db.execute(existing_query).all()}
+
+            rows_to_insert = []
+            for row in feature_df.itertuples(index=False):
+                timestamp = row.timestamp
+                if hasattr(timestamp, "to_pydatetime"):
+                    timestamp = timestamp.to_pydatetime()
+                if timestamp in existing_timestamps:
+                    continue
+
+                row_dict = prepare_insert_row(asset, row, column_names)
+                row_dict["timestamp"] = timestamp
+                rows_to_insert.append(row_dict)
+                existing_timestamps.add(timestamp)
+
+            if rows_to_insert:
+                db.execute(features_table.insert(), rows_to_insert)
+                db.commit()
+
+            inserted = len(rows_to_insert)
+            total_inserted += inserted
+            print(f"Inserted {inserted} feature rows")
+
+        print(f"Total feature rows inserted: {total_inserted}")
+    finally:
+        db.close()
+
+
+if __name__ == "__main__":
+    generate_features()
+
+================================================================================
+FILE: agents/market_data_agent/__init__.py
+
+
+================================================================================
+FILE: agents/market_data_agent/fetch_crypto.py
+
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+import sys
+
+import ccxt
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from backend.database.models.asset import Asset
+from backend.database.models.market_data import MarketData
+from backend.database.postgres import SessionLocal
+
+
+DEFAULT_CRYPTO_START = datetime(2017, 1, 1, tzinfo=timezone.utc)
+ONE_DAY_MS = 24 * 60 * 60 * 1000
+
+
+def fetch_crypto_data(symbol):
+    db = SessionLocal()
+    exchange = ccxt.binance({"enableRateLimit": True})
+    inserted = 0
+
+    try:
+        print(f"Fetching crypto data for {symbol}")
+        last_row = (
+            db.query(MarketData)
+            .filter(MarketData.symbol == symbol)
+            .order_by(MarketData.timestamp.desc())
+            .first()
+        )
+
+        if last_row:
+            since_dt = last_row.timestamp + timedelta(days=1)
+            if since_dt.tzinfo is None:
+                since_dt = since_dt.replace(tzinfo=timezone.utc)
+        else:
+            since_dt = DEFAULT_CRYPTO_START
+
+        since_ms = int(since_dt.timestamp() * 1000)
+
+        while True:
+            candles = exchange.fetch_ohlcv(symbol, timeframe="1d", since=since_ms, limit=1000)
+            if not candles:
+                break
+
+            batch_inserted = 0
+            for candle in candles:
+                timestamp = datetime.fromtimestamp(candle[0] / 1000, tz=timezone.utc).replace(tzinfo=None)
+                existing = (
+                    db.query(MarketData)
+                    .filter(
+                        MarketData.symbol == symbol,
+                        MarketData.timestamp == timestamp,
+                    )
+                    .first()
+                )
+                if existing:
+                    continue
+
+                market_row = MarketData(
+                    symbol=symbol,
+                    timestamp=timestamp,
+                    open=float(candle[1]),
+                    high=float(candle[2]),
+                    low=float(candle[3]),
+                    close=float(candle[4]),
+                    volume=float(candle[5]),
+                    source="binance",
+                )
+                db.add(market_row)
+                inserted += 1
+                batch_inserted += 1
+
+            db.commit()
+            since_ms = candles[-1][0] + ONE_DAY_MS
+
+            if len(candles) < 1000:
+                break
+
+        print(f"Inserted {inserted} rows")
+        return inserted
+    except Exception as exc:
+        db.rollback()
+        print(f"Error fetching crypto data for {symbol}: {exc}")
+        return 0
+    finally:
+        db.close()
+
+
+def fetch_crypto():
+    db = SessionLocal()
+    try:
+        crypto_assets = db.query(Asset).filter(Asset.asset_type == "crypto", Asset.active.is_(True)).all()
+        for asset in crypto_assets:
+            fetch_crypto_data(asset.symbol)
+    finally:
+        db.close()
+
+
+if __name__ == "__main__":
+    fetch_crypto()
+
+================================================================================
+FILE: agents/market_data_agent/fetch_macro.py
+
+from pathlib import Path
+import sys
+
+from fredapi import Fred
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from backend.core.config import FRED_API_KEY
+from backend.database.models.asset import Asset
+from backend.database.models.market_data import MarketData
+from backend.database.postgres import SessionLocal
+
+
+MACRO_SYMBOLS = ("FEDFUNDS", "CPIAUCSL", "UNRATE")
+
+
+def fetch_macro_data(symbol):
+    db = SessionLocal()
+    fred = Fred(api_key=FRED_API_KEY)
+    inserted = 0
+
+    try:
+        print(f"Fetching macro data for {symbol}")
+        series = fred.get_series(symbol)
+        if series.empty:
+            print(f"No data returned for {symbol}")
+            return 0
+
+        for timestamp, value in series.items():
+            if hasattr(timestamp, "to_pydatetime"):
+                timestamp = timestamp.to_pydatetime()
+
+            existing = (
+                db.query(MarketData)
+                .filter(
+                    MarketData.symbol == symbol,
+                    MarketData.timestamp == timestamp,
+                )
+                .first()
+            )
+            if existing:
+                continue
+
+            market_row = MarketData(
+                symbol=symbol,
+                timestamp=timestamp,
+                open=float(value),
+                high=float(value),
+                low=float(value),
+                close=float(value),
+                volume=0.0,
+                source="fred",
+            )
+            db.add(market_row)
+            inserted += 1
+
+        db.commit()
+        print(f"Inserted {inserted} rows")
+        return inserted
+    except Exception as exc:
+        db.rollback()
+        print(f"Error fetching macro data for {symbol}: {exc}")
+        return 0
+    finally:
+        db.close()
+
+
+def fetch_macro():
+    db = SessionLocal()
+    try:
+        macro_assets = db.query(Asset).filter(Asset.asset_type == "macro", Asset.active.is_(True)).all()
+        for asset in macro_assets:
+            fetch_macro_data(asset.symbol)
+    finally:
+        db.close()
+
+
+if __name__ == "__main__":
+    fetch_macro()
+
+================================================================================
+FILE: agents/market_data_agent/fetch_stocks.py
+
+from datetime import datetime
+from pathlib import Path
+import sys
+
+import pandas as pd
+import yfinance as yf
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from backend.database.models.asset import Asset
+from backend.database.models.market_data import MarketData
+from backend.database.postgres import SessionLocal
+
+
+def scalar_to_float(value):
+    if isinstance(value, pd.Series):
+        value = value.iloc[0]
+    if hasattr(value, "item"):
+        try:
+            value = value.item()
+        except Exception:
+            pass
+    if pd.isna(value):
+        return None
+    return float(value)
+
+
+def fetch_stock_data(symbol, start_date, end_date):
+    db = SessionLocal()
+    inserted = 0
+
+    try:
+        print(f"Fetching stock data for {symbol}")
+        data = yf.download(
+            symbol,
+            start=start_date,
+            end=end_date,
+            progress=False,
+            threads=False,
+        )
+
+        if data.empty:
+            print(f"No data returned for {symbol}")
+            return 0
+
+        data = data.reset_index()
+        timestamp_column = data.columns[0]
+
+        for _, row in data.iterrows():
+            timestamp = row[timestamp_column]
+            if hasattr(timestamp, "to_pydatetime"):
+                timestamp = timestamp.to_pydatetime()
+
+            existing = (
+                db.query(MarketData)
+                .filter(
+                    MarketData.symbol == symbol,
+                    MarketData.timestamp == timestamp,
+                )
+                .first()
+            )
+            if existing:
+                continue
+
+            market_row = MarketData(
+                symbol=symbol,
+                timestamp=timestamp,
+                open=scalar_to_float(row["Open"]),
+                high=scalar_to_float(row["High"]),
+                low=scalar_to_float(row["Low"]),
+                close=scalar_to_float(row["Close"]),
+                volume=scalar_to_float(row["Volume"]),
+                source="yfinance",
+            )
+            db.add(market_row)
+            inserted += 1
+
+        db.commit()
+        print(f"Inserted {inserted} rows")
+        return inserted
+    except Exception as exc:
+        db.rollback()
+        print(f"Error fetching stock data for {symbol}: {exc}")
+        return 0
+    finally:
+        db.close()
+
+
+def fetch_stocks():
+    db = SessionLocal()
+    try:
+        stock_assets = db.query(Asset).filter(Asset.asset_type == "stock", Asset.active.is_(True)).all()
+        end_date = datetime.utcnow().date().isoformat()
+        start_date = "2015-01-01"
+
+        for asset in stock_assets:
+            fetch_stock_data(asset.symbol, start_date, end_date)
+    finally:
+        db.close()
+
+
+if __name__ == "__main__":
+    fetch_stocks()
+
+================================================================================
+FILE: agents/market_data_agent/scheduler.py
+
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+import sys
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from agents.market_data_agent.fetch_crypto import fetch_crypto_data
+from agents.market_data_agent.fetch_macro import fetch_macro_data
+from agents.market_data_agent.fetch_stocks import fetch_stock_data
+from backend.database.models.asset import Asset
+from backend.database.models.market_data import MarketData
+from backend.database.postgres import SessionLocal
+
+
+DEFAULT_STOCK_START = datetime(2015, 1, 1)
+
+
+def update_market_data():
+    db = SessionLocal()
+    try:
+        assets = db.query(Asset).filter(Asset.active.is_(True)).all()
+
+        for asset in assets:
+            if asset.asset_type == "stock":
+                last_row = (
+                    db.query(MarketData)
+                    .filter(MarketData.symbol == asset.symbol)
+                    .order_by(MarketData.timestamp.desc())
+                    .first()
+                )
+                if last_row:
+                    start_date = (last_row.timestamp + timedelta(days=1)).date().isoformat()
+                else:
+                    start_date = DEFAULT_STOCK_START.date().isoformat()
+                end_date = (datetime.now(timezone.utc) + timedelta(days=1)).date().isoformat()
+                fetch_stock_data(asset.symbol, start_date, end_date)
+            elif asset.asset_type == "crypto":
+                fetch_crypto_data(asset.symbol)
+            elif asset.asset_type == "macro":
+                fetch_macro_data(asset.symbol)
+    finally:
+        db.close()
+
+
+if __name__ == "__main__":
+    update_market_data()
+
+================================================================================
+FILE: agents/portfolio_agent/__init__.py
+
+
+================================================================================
+FILE: agents/portfolio_agent/env_portfolio.py
+
+from pathlib import Path
+import contextlib
+import io
+import sys
+
+import numpy as np
+import pandas as pd
+import torch
+
+try:
+    import gymnasium as gym
+    from gymnasium import spaces
+except ImportError:
+    import gym
+    from gym import spaces
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from agents.alpha_agent.dataset_builder import (
+    REGIME_TO_ID,
+    SEQUENCE_LENGTH,
+    get_active_features,
+    load_training_dataframe,
+    sanitize_training_dataframe,
+    split_and_normalize_dataframe,
+)
+from agents.alpha_agent.neuroquant_model import NeuroQuantAlphaModel
+
+
+DEFAULT_MAX_ASSETS = 16
+DEFAULT_MAX_WEIGHT = 0.10
+DEFAULT_TURNOVER_PENALTY = 0.05
+DEFAULT_RISK_FREE_RATE = 0.0
+DEFAULT_ROLLING_VOL_WINDOW = 20
+DEFAULT_MIN_TIMESTEPS = 64
+ALPHA_MODEL_PATH = PROJECT_ROOT / "models" / "neuroquant_alpha_model.pt"
+
+
+def equal_weight_portfolio(num_assets):
+    if num_assets <= 0:
+        return np.asarray([], dtype=np.float32)
+    return np.full(num_assets, 1.0 / num_assets, dtype=np.float32)
+
+
+def _portfolio_path_stats(returns):
+    if not returns:
+        return 0.0, 0.0
+
+    wealth = np.cumprod(1.0 + np.asarray(returns, dtype=np.float64))
+    peaks = np.maximum.accumulate(wealth)
+    drawdowns = 1.0 - (wealth / np.maximum(peaks, 1e-8))
+    cumulative_return = float(wealth[-1] - 1.0)
+    max_drawdown = float(drawdowns.max()) if len(drawdowns) else 0.0
+    return cumulative_return, max_drawdown
+
+
+def _normalize_rank_signal(values):
+    normalized = np.zeros(len(values), dtype=np.float32)
+    valid = np.isfinite(values)
+    count = int(valid.sum())
+
+    if count == 0:
+        return normalized
+    if count == 1:
+        normalized[valid] = 0.0
+        return normalized
+
+    ranks = pd.Series(values[valid]).rank(method="average").to_numpy(dtype=np.float32)
+    normalized[valid] = (2.0 * ((ranks - 1.0) / (count - 1.0)) - 1.0).astype(np.float32)
+    return np.clip(normalized, -1.0, 1.0)
+
+
+class PortfolioEnv(gym.Env):
+    metadata = {"render_modes": []}
+
+    def __init__(
+        self,
+        split="train",
+        max_assets=DEFAULT_MAX_ASSETS,
+        max_weight=DEFAULT_MAX_WEIGHT,
+        turnover_penalty=DEFAULT_TURNOVER_PENALTY,
+        risk_free_rate=DEFAULT_RISK_FREE_RATE,
+        rolling_vol_window=DEFAULT_ROLLING_VOL_WINDOW,
+        min_timestamps=DEFAULT_MIN_TIMESTEPS,
+    ):
+        super().__init__()
+        self.split = split
+        self.max_assets = max_assets
+        self.max_weight = max_weight
+        self.turnover_penalty = turnover_penalty
+        self.risk_free_rate = risk_free_rate
+        self.rolling_vol_window = rolling_vol_window
+        self.min_timestamps = min_timestamps
+        self.research_train_df = None
+        self.research_test_df = None
+        self.active_features = self._resolve_active_features()
+        self.alpha_features = get_active_features()
+        self.alpha_device = torch.device("cpu")
+        self.alpha_model = self._load_alpha_model()
+
+        self.asset_symbols, self.steps = self._prepare_steps()
+        self.num_assets = len(self.asset_symbols)
+
+        if self.num_assets == 0 or not self.steps:
+            raise RuntimeError("Portfolio environment could not be initialized with valid assets/timesteps")
+
+        self.observation_dim = (self.num_assets * len(self.active_features)) + (2 * self.num_assets)
+        self.action_dim = self.num_assets
+        self.observation_space = spaces.Box(
+            low=-np.inf,
+            high=np.inf,
+            shape=(self.observation_dim,),
+            dtype=np.float32,
+        )
+        self.action_space = spaces.Box(
+            low=0.0,
+            high=1.0,
+            shape=(self.action_dim,),
+            dtype=np.float32,
+        )
+
+        self.current_step = 0
+        self.previous_weights = equal_weight_portfolio(self.num_assets)
+        self.episode_rewards = []
+        self.episode_returns = []
+        self.episode_turnovers = []
+
+    def _resolve_active_features(self):
+        try:
+            from agents.alpha_agent.run_structured_alpha_upgrade import build_research_frames
+
+            with contextlib.redirect_stdout(io.StringIO()):
+                train_df, test_df, selected_features = build_research_frames()
+            self.research_train_df = train_df.copy()
+            self.research_test_df = test_df.copy()
+            return selected_features
+        except Exception:
+            return get_active_features()
+
+    def _load_alpha_model(self):
+        if not ALPHA_MODEL_PATH.exists():
+            raise RuntimeError(f"Alpha model not found at {ALPHA_MODEL_PATH}")
+
+        model = NeuroQuantAlphaModel(feature_dim=len(self.alpha_features)).to(self.alpha_device)
+        state_dict = torch.load(ALPHA_MODEL_PATH, map_location=self.alpha_device, weights_only=True)
+        model.load_state_dict(state_dict)
+        model.eval()
+        for parameter in model.parameters():
+            parameter.requires_grad_(False)
+        return model
+
+    @staticmethod
+    def _attach_next_returns(split_df, reward_frame):
+        split_df = split_df.merge(reward_frame, on=["symbol", "timestamp"], how="left")
+        split_df["next_return"] = split_df.groupby("symbol", sort=False)["realized_return_1"].shift(-1)
+        split_df = split_df.drop(columns=["realized_return_1"])
+        return split_df
+
+    def _predict_alpha_rank(self, alpha_sequences, regime_ids):
+        with torch.no_grad():
+            feature_tensor = torch.from_numpy(alpha_sequences).unsqueeze(0).to(self.alpha_device)
+            regime_tensor = torch.from_numpy(regime_ids).unsqueeze(0).to(self.alpha_device)
+            alpha_scores = self.alpha_model(feature_tensor, regime_tensor).squeeze(0).cpu().numpy()
+        alpha_scores = np.where(np.isfinite(alpha_scores), alpha_scores, 0.0)
+        return _normalize_rank_signal(alpha_scores)
+
+    def _prepare_steps(self):
+        raw_df = sanitize_training_dataframe(load_training_dataframe())
+        reward_frame = raw_df[["symbol", "timestamp", "log_return_1"]].copy()
+        reward_frame = reward_frame.rename(columns={"log_return_1": "realized_return_1"})
+        reward_frame["timestamp"] = pd.to_datetime(reward_frame["timestamp"])
+
+        if self.research_train_df is not None and self.research_test_df is not None:
+            train_df = self.research_train_df.copy()
+            test_df = self.research_test_df.copy()
+        else:
+            train_df, test_df = split_and_normalize_dataframe(raw_df)
+
+        train_df = self._attach_next_returns(train_df, reward_frame)
+        test_df = self._attach_next_returns(test_df, reward_frame)
+        split_df = train_df if self.split == "train" else test_df
+
+        missing_active = [feature for feature in self.active_features if feature not in split_df.columns]
+        if missing_active:
+            raise RuntimeError(f"Missing portfolio observation features: {missing_active}")
+
+        missing_alpha = [feature for feature in self.alpha_features if feature not in split_df.columns]
+        if missing_alpha:
+            raise RuntimeError(f"Missing alpha inference features: {missing_alpha}")
+
+        symbol_windows = {}
+        for symbol, group in split_df.groupby("symbol", sort=False):
+            group = group.sort_values("timestamp").reset_index(drop=True)
+            if len(group) < SEQUENCE_LENGTH + 1:
+                continue
+
+            active_feature_matrix = group[self.active_features].to_numpy(dtype=np.float32, copy=False)
+            alpha_feature_matrix = group[self.alpha_features].to_numpy(dtype=np.float32, copy=False)
+            regime_series = group["regime_label"].map(REGIME_TO_ID).to_numpy(dtype=np.int64, copy=False)
+            next_return_series = group["next_return"].to_numpy(dtype=np.float32, copy=False)
+            timestamp_series = group["timestamp"].tolist()
+
+            windows = {}
+            for end_idx in range(SEQUENCE_LENGTH - 1, len(group) - 1):
+                next_return = next_return_series[end_idx]
+                if not np.isfinite(next_return):
+                    continue
+
+                start_idx = end_idx - SEQUENCE_LENGTH + 1
+                timestamp = timestamp_series[end_idx]
+                windows[timestamp] = {
+                    "latest_features": active_feature_matrix[end_idx],
+                    "alpha_sequence": alpha_feature_matrix[start_idx : end_idx + 1],
+                    "regime_id": regime_series[end_idx],
+                    "next_return": float(next_return),
+                }
+
+            if windows:
+                symbol_windows[symbol] = windows
+
+        if not symbol_windows:
+            raise RuntimeError(f"No rolling windows available for split '{self.split}'")
+
+        sorted_symbols = sorted(symbol_windows, key=lambda sym: len(symbol_windows[sym]), reverse=True)
+        selected_symbols = []
+        common_timestamps = None
+
+        for symbol in sorted_symbols:
+            symbol_timestamps = set(symbol_windows[symbol].keys())
+            proposed_timestamps = symbol_timestamps if common_timestamps is None else common_timestamps & symbol_timestamps
+
+            if len(proposed_timestamps) < self.min_timestamps:
+                if not selected_symbols and len(symbol_timestamps) >= self.min_timestamps:
+                    selected_symbols.append(symbol)
+                    common_timestamps = symbol_timestamps
+                continue
+
+            selected_symbols.append(symbol)
+            common_timestamps = proposed_timestamps
+            if len(selected_symbols) >= self.max_assets:
+                break
+
+        if not selected_symbols:
+            raise RuntimeError("Could not select a stable asset universe for the portfolio environment")
+
+        if common_timestamps is None:
+            common_timestamps = set(symbol_windows[selected_symbols[0]].keys())
+
+        timeline = sorted(common_timestamps)
+        if len(timeline) < 2:
+            raise RuntimeError("Not enough aligned timestamps for portfolio training")
+
+        steps = []
+        for timestamp in timeline:
+            latest_features = np.stack(
+                [symbol_windows[symbol][timestamp]["latest_features"] for symbol in selected_symbols],
+                axis=0,
+            ).astype(np.float32)
+            alpha_sequences = np.stack(
+                [symbol_windows[symbol][timestamp]["alpha_sequence"] for symbol in selected_symbols],
+                axis=0,
+            ).astype(np.float32)
+            regime_ids = np.asarray(
+                [symbol_windows[symbol][timestamp]["regime_id"] for symbol in selected_symbols],
+                dtype=np.int64,
+            )
+            next_returns = np.asarray(
+                [symbol_windows[symbol][timestamp]["next_return"] for symbol in selected_symbols],
+                dtype=np.float32,
+            )
+            alpha_rank = self._predict_alpha_rank(alpha_sequences, regime_ids)
+
+            steps.append(
+                {
+                    "timestamp": timestamp,
+                    "latest_features": latest_features,
+                    "alpha_rank": alpha_rank.astype(np.float32),
+                    "regime_ids": regime_ids,
+                    "next_returns": next_returns,
+                }
+            )
+
+        return selected_symbols, steps
+
+    def _normalize_weights(self, weights):
+        weights = np.asarray(weights, dtype=np.float64)
+        weights = np.where(np.isfinite(weights), weights, 0.0)
+        weights = np.clip(weights, 0.0, None)
+
+        if weights.sum() <= 0.0:
+            return equal_weight_portfolio(self.num_assets)
+
+        weights = weights / weights.sum()
+
+        if self.num_assets * self.max_weight < 1.0 - 1e-8:
+            return equal_weight_portfolio(self.num_assets)
+
+        adjusted = weights.copy()
+        for _ in range(self.num_assets * 4):
+            over = adjusted > self.max_weight + 1e-10
+            if not over.any():
+                break
+
+            excess = float((adjusted[over] - self.max_weight).sum())
+            adjusted[over] = self.max_weight
+            under = adjusted < self.max_weight - 1e-10
+            if excess <= 0.0 or not under.any():
+                break
+
+            room = self.max_weight - adjusted[under]
+            room_sum = float(room.sum())
+            if room_sum <= 0.0:
+                break
+            adjusted[under] += excess * (room / room_sum)
+
+        adjusted = np.clip(adjusted, 0.0, self.max_weight)
+        total = float(adjusted.sum())
+        if total <= 0.0:
+            return equal_weight_portfolio(self.num_assets)
+
+        adjusted = adjusted / total
+        return adjusted.astype(np.float32)
+
+    def _get_observation(self):
+        step = self.steps[self.current_step]
+        return np.concatenate(
+            [
+                step["latest_features"].reshape(-1),
+                step["alpha_rank"],
+                step["regime_ids"].astype(np.float32),
+            ]
+        ).astype(np.float32)
+
+    def reset(self, seed=None, options=None):
+        super().reset(seed=seed)
+        self.current_step = 0
+        self.previous_weights = equal_weight_portfolio(self.num_assets)
+        self.episode_rewards = []
+        self.episode_returns = []
+        self.episode_turnovers = []
+
+        observation = self._get_observation()
+        info = {
+            "timestamp": str(self.steps[self.current_step]["timestamp"]),
+            "symbols": self.asset_symbols,
+            "features": self.steps[self.current_step]["latest_features"].copy(),
+            "alpha_rank": self.steps[self.current_step]["alpha_rank"].copy(),
+            "regime_state": self.steps[self.current_step]["regime_ids"].copy(),
+        }
+        return observation, info
+
+    def step(self, action):
+        weights = self._normalize_weights(action)
+        step = self.steps[self.current_step]
+
+        asset_returns = step["next_returns"]
+        portfolio_return = float(np.dot(weights, asset_returns))
+        turnover = 0.5 * float(np.sum(np.abs(weights - self.previous_weights)))
+
+        prospective_returns = self.episode_returns + [portfolio_return]
+        rolling_returns = np.asarray(prospective_returns[-self.rolling_vol_window :], dtype=np.float64)
+        volatility = float(rolling_returns.std()) if rolling_returns.size > 1 else max(abs(portfolio_return), 1e-3)
+        reward = portfolio_return / (volatility + 1e-6)
+        reward -= self.turnover_penalty * turnover
+
+        self.episode_rewards.append(reward)
+        self.episode_returns.append(portfolio_return)
+        self.episode_turnovers.append(turnover)
+        self.previous_weights = weights
+
+        self.current_step += 1
+        terminated = self.current_step >= len(self.steps)
+        truncated = False
+
+        if terminated:
+            next_observation = np.zeros(self.observation_space.shape, dtype=np.float32)
+            next_step_payload = None
+        else:
+            next_observation = self._get_observation()
+            next_step_payload = self.steps[self.current_step]
+
+        average_return = float(np.mean(self.episode_returns)) if self.episode_returns else 0.0
+        episode_volatility = float(np.std(self.episode_returns)) if len(self.episode_returns) > 1 else 0.0
+        sharpe_ratio = (average_return - self.risk_free_rate) / (episode_volatility + 1e-6) if self.episode_returns else 0.0
+        cumulative_return, max_drawdown = _portfolio_path_stats(self.episode_returns)
+        average_turnover = float(np.mean(self.episode_turnovers)) if self.episode_turnovers else 0.0
+
+        info = {
+            "portfolio_return": portfolio_return,
+            "average_return": average_return,
+            "volatility": episode_volatility,
+            "sharpe_ratio": sharpe_ratio,
+            "turnover": turnover,
+            "max_drawdown": max_drawdown,
+            "weights": weights,
+            "timestamp": str(step["timestamp"]),
+        }
+
+        if next_step_payload is not None:
+            info["features"] = next_step_payload["latest_features"].copy()
+            info["alpha_rank"] = next_step_payload["alpha_rank"].copy()
+            info["regime_state"] = next_step_payload["regime_ids"].copy()
+
+        if terminated:
+            info["episode_reward"] = float(np.sum(self.episode_rewards))
+            info["final_return"] = cumulative_return
+            info["final_volatility"] = episode_volatility
+            info["final_sharpe"] = sharpe_ratio
+            info["max_drawdown"] = max_drawdown
+            info["final_turnover"] = average_turnover
+
+        return next_observation, reward, terminated, truncated, info
+
+    def render(self):
+        return None
+
+================================================================================
+FILE: agents/portfolio_agent/train_portfolio.py
+
+from pathlib import Path
+import sys
+
+from stable_baselines3 import PPO
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from agents.portfolio_agent.env_portfolio import PortfolioEnv
+
+
+TOTAL_TIMESTEPS = 20000
+MODEL_STEM = PROJECT_ROOT / "models" / "portfolio_models" / "ppo_model"
+MODEL_ZIP = MODEL_STEM.with_suffix(".zip")
+
+
+def train_portfolio_model(model_stem=MODEL_STEM, total_timesteps=TOTAL_TIMESTEPS):
+    env = PortfolioEnv(split="train")
+    model = PPO("MlpPolicy", env, verbose=1, seed=42)
+    model.learn(total_timesteps=total_timesteps)
+    model_stem.parent.mkdir(parents=True, exist_ok=True)
+    model.save(str(model_stem))
+    return model
+
+
+def evaluate_portfolio(model=None, model_stem=MODEL_STEM):
+    env = PortfolioEnv(split="test")
+    if model is None:
+        model = PPO.load(str(model_stem), env=env)
+
+    observation, _info = env.reset()
+    done = False
+    final_info = {}
+
+    while not done:
+        action, _state = model.predict(observation, deterministic=True)
+        observation, _reward, terminated, truncated, info = env.step(action)
+        done = terminated or truncated
+        final_info = info
+
+    return {
+        "final_return": float(final_info.get("final_return", 0.0)),
+        "final_sharpe": float(final_info.get("final_sharpe", 0.0)),
+        "max_drawdown": float(final_info.get("max_drawdown", 0.0)),
+        "turnover": float(final_info.get("final_turnover", 0.0)),
+    }
+
+
+def main():
+    model = train_portfolio_model()
+    metrics = evaluate_portfolio(model=model)
+
+    print(f"FINAL_RETURN={metrics['final_return']:.6f}")
+    print(f"FINAL_SHARPE={metrics['final_sharpe']:.6f}")
+    print(f"MAX_DRAWDOWN={metrics['max_drawdown']:.6f}")
+    print(f"TURNOVER={metrics['turnover']:.6f}")
+
+
+if __name__ == "__main__":
+    main()
+
+================================================================================
+FILE: agents/regime_agent/__init__.py
+
+
+================================================================================
+FILE: agents/regime_detection_agent/__init__.py
+
+
+
+================================================================================
+FILE: agents/regime_detection_agent/detect_regimes.py
+
+from pathlib import Path
+import sys
+
+import numpy as np
+import pandas as pd
+from scipy.stats import wasserstein_distance
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from backend.database.models.asset import Asset
+from backend.database.models.features import Features
+from backend.database.models.market_regime import MarketRegime
+from backend.database.postgres import SessionLocal
+
+
+WINDOW_SIZE = 60
+HALF_WINDOW = 30
+
+
+def load_returns(symbol, db=None):
+    owns_session = db is None
+    if owns_session:
+        db = SessionLocal()
+
+    try:
+        # Use log returns produced by the feature engineering pipeline.
+        rows = (
+            db.query(Features.timestamp, Features.log_return_1)
+            .filter(
+                Features.symbol == symbol,
+                Features.log_return_1 != None
+            )
+            .order_by(Features.timestamp)
+            .all()
+        )
+        if not rows:
+            return pd.Series(dtype=float)
+
+        returns = pd.Series(
+            [row[1] for row in rows],
+            index=pd.to_datetime([row[0] for row in rows]),
+            dtype=float,
+        )
+        return returns.dropna().sort_index()
+    finally:
+        if owns_session:
+            db.close()
+
+
+def compute_regime_scores(returns):
+    if returns.empty or len(returns) < WINDOW_SIZE + HALF_WINDOW:
+        return pd.DataFrame(columns=["timestamp", "regime_score"])
+
+    values = returns.to_numpy(dtype=float)
+    timestamps = returns.index
+    raw_scores = []
+    score_timestamps = []
+
+    for t in range(WINDOW_SIZE, len(values) - HALF_WINDOW):
+        window_1 = values[t - WINDOW_SIZE : t]
+        window_2 = values[t - HALF_WINDOW : t + HALF_WINDOW]
+        if len(window_1) != WINDOW_SIZE or len(window_2) != WINDOW_SIZE:
+            continue
+
+        raw_scores.append(wasserstein_distance(window_1, window_2))
+        score_timestamps.append(timestamps[t])
+
+    if not raw_scores:
+        return pd.DataFrame(columns=["timestamp", "regime_score"])
+
+    raw_scores = np.asarray(raw_scores, dtype=float)
+    max_score = raw_scores.max()
+    if max_score > 0:
+        normalized_scores = raw_scores / max_score
+    else:
+        normalized_scores = np.zeros_like(raw_scores)
+
+    return pd.DataFrame(
+        {
+            "timestamp": pd.to_datetime(score_timestamps),
+            "regime_score": normalized_scores,
+        }
+    )
+
+
+def classify_regime(score):
+    if score < 0.2:
+        return "bull"
+    if score < 0.5:
+        return "normal"
+    if score < 0.8:
+        return "volatile"
+    return "crisis"
+
+
+def store_regime(symbol, timestamp, score, label, db, existing_timestamps):
+    if timestamp in existing_timestamps:
+        return False
+
+    db.add(
+        MarketRegime(
+            symbol=symbol,
+            timestamp=timestamp,
+            regime_score=float(score),
+            regime_label=label,
+        )
+    )
+    existing_timestamps.add(timestamp)
+    return True
+
+
+def main():
+    db = SessionLocal()
+    try:
+        symbols = [row[0] for row in db.query(Asset.symbol).distinct().all()]
+
+        for symbol in symbols:
+            print(f"Processing symbol: {symbol}")
+            returns = load_returns(symbol, db=db)
+            regime_scores = compute_regime_scores(returns)
+            print(f"Computed {len(regime_scores)} regime scores")
+
+            existing_timestamps = {
+                row[0]
+                for row in db.query(MarketRegime.timestamp)
+                .filter(MarketRegime.symbol == symbol)
+                .all()
+            }
+
+            inserted = 0
+            for row in regime_scores.itertuples(index=False):
+                timestamp = row.timestamp
+                if hasattr(timestamp, "to_pydatetime"):
+                    timestamp = timestamp.to_pydatetime()
+
+                label = classify_regime(row.regime_score)
+                if store_regime(symbol, timestamp, row.regime_score, label, db, existing_timestamps):
+                    inserted += 1
+
+            db.commit()
+            print(f"Inserted {inserted} rows")
+    finally:
+        db.close()
+
+
+if __name__ == "__main__":
+    main()
+
+================================================================================
+FILE: agents/risk_agent/__init__.py
+
+
+================================================================================
+FILE: backend/__init__.py
+
+
+================================================================================
+FILE: backend/main.py
+
+from fastapi import FastAPI
+
+from backend.api.user_routes import router as user_router
+from backend.database.postgres import create_tables
+
+
+app = FastAPI()
+
+app.include_router(user_router, prefix="/users", tags=["users"])
+
+@app.on_event("startup")
+def startup():
+    create_tables()
+
+
+
+@app.get("/")
+def read_root():
+    return {"message": "NeuroQuant backend running"}
+
+
+@app.get("/health")
+def health_check():
+    return {"status": "ok", "message": "NeuroQuant backend healthy"}
+
+================================================================================
+FILE: backend/api/__init__.py
+
+
+================================================================================
+FILE: backend/api/user_routes.py
+
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
+
+from backend.database.models.user import User
+from backend.database.postgres import get_db
+from backend.schemas.user_schema import UserCreate, UserResponse
+
+
+router = APIRouter()
+
+
+@router.post("/", response_model=UserResponse)
+def create_user(user: UserCreate, db: Session = Depends(get_db)):
+    new_user = User(
+        name=user.name,
+        email=user.email,
+        risk_tolerance=user.risk_tolerance,
+        capital=user.capital,
+        investment_goal=user.investment_goal,
+    )
+
+    try:
+        db.add(new_user)
+        db.commit()
+        db.refresh(new_user)
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="User with this email already exists")
+
+    return new_user
+
+
+@router.get("/", response_model=list[UserResponse])
+def get_users(db: Session = Depends(get_db)):
+    return db.query(User).all()
+
+================================================================================
+FILE: backend/core/__init__.py
+
+
+================================================================================
+FILE: backend/core/config.py
+
+import os
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+
+ENV_PATH = Path(__file__).resolve().parents[2] / "configs" / "dev.env"
+load_dotenv(ENV_PATH)
+
+POSTGRES_HOST = os.getenv("POSTGRES_HOST")
+POSTGRES_PORT = os.getenv("POSTGRES_PORT")
+POSTGRES_DB = os.getenv("POSTGRES_DB")
+POSTGRES_USER = os.getenv("POSTGRES_USER")
+POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD")
+
+REDIS_HOST = os.getenv("REDIS_HOST")
+REDIS_PORT = os.getenv("REDIS_PORT")
+
+FRED_API_KEY = os.getenv("FRED_API_KEY")
+
+================================================================================
+FILE: backend/database/__init__.py
+
+
+================================================================================
+FILE: backend/database/postgres.py
+
+from sqlalchemy import create_engine
+from sqlalchemy.orm import declarative_base, sessionmaker
+
+from backend.core.config import (
+    POSTGRES_DB,
+    POSTGRES_HOST,
+    POSTGRES_PASSWORD,
+    POSTGRES_PORT,
+    POSTGRES_USER,
+)
+
+
+DATABASE_URL = (
+    f"postgresql+psycopg2://{POSTGRES_USER}:{POSTGRES_PASSWORD}"
+    f"@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
+)
+
+engine = create_engine(DATABASE_URL)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base = declarative_base()
+
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+def create_tables():
+    # Import all ORM models before create_all so SQLAlchemy registers every table.
+    from backend.database.models.user import User  # noqa: F401
+    from backend.database.models.asset import Asset  # noqa: F401
+    from backend.database.models.market_data import MarketData  # noqa: F401
+    from backend.database.models.features import Features  # noqa: F401
+    from backend.database.models.market_regime import MarketRegime  # noqa: F401
+    from backend.database.models.asset_universe import AssetUniverse  # noqa: F401
+
+    print("Creating database tables...")
+    Base.metadata.create_all(bind=engine)
+
+================================================================================
+FILE: backend/database/models/__init__.py
+
+
+
+================================================================================
+FILE: backend/database/models/asset.py
+
+from sqlalchemy import Boolean, Column, DateTime, Integer, String
+from sqlalchemy.sql import func
+
+from backend.database.postgres import Base
+
+
+class Asset(Base):
+    __tablename__ = "assets"
+
+    id = Column(Integer, primary_key=True, index=True)
+    symbol = Column(String, unique=True, index=True)
+    name = Column(String)
+    asset_type = Column(String)
+    exchange = Column(String, nullable=True)
+    sector = Column(String, nullable=True)
+    active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=func.now())
+
+================================================================================
+FILE: backend/database/models/asset_universe.py
+
+from sqlalchemy import Column, DateTime, Float, Integer, String
+from sqlalchemy.sql import func
+
+from backend.database.postgres import Base
+
+
+class AssetUniverse(Base):
+    __tablename__ = "asset_universe"
+
+    id = Column(Integer, primary_key=True)
+    symbol = Column(String, index=True, unique=True)
+    score = Column(Float)
+    selected_at = Column(DateTime, default=func.now())
+
+================================================================================
+FILE: backend/database/models/features.py
+
+from sqlalchemy import Column, DateTime, Float, Integer, String
+from sqlalchemy.sql import func
+
+from backend.database.postgres import Base
+
+
+class Features(Base):
+    __tablename__ = "features"
+
+    id = Column(Integer, primary_key=True)
+
+    symbol = Column(String, index=True)
+    timestamp = Column(DateTime, index=True)
+
+    log_return_1 = Column(Float)
+    log_return_5 = Column(Float)
+    log_return_20 = Column(Float)
+
+    momentum_5 = Column(Float)
+    momentum_20 = Column(Float)
+    momentum_60 = Column(Float)
+
+    volatility_10 = Column(Float)
+    volatility_20 = Column(Float)
+    volatility_60 = Column(Float)
+
+    sma_20 = Column(Float)
+    sma_50 = Column(Float)
+    sma_200 = Column(Float)
+
+    price_vs_sma20 = Column(Float)
+    price_vs_sma50 = Column(Float)
+    price_vs_sma200 = Column(Float)
+
+    RSI_14 = Column(Float)
+
+    MACD = Column(Float)
+    MACD_signal = Column(Float)
+    MACD_hist = Column(Float)
+
+    volume_change = Column(Float)
+    volume_zscore = Column(Float)
+
+    created_at = Column(DateTime, default=func.now())
+================================================================================
+FILE: backend/database/models/market_data.py
+
+from sqlalchemy import Column, DateTime, Float, Integer, String
+from sqlalchemy.sql import func
+
+from backend.database.postgres import Base
+
+
+class MarketData(Base):
+    __tablename__ = "market_data"
+
+    id = Column(Integer, primary_key=True)
+    symbol = Column(String, index=True)
+    timestamp = Column(DateTime, index=True)
+    open = Column(Float)
+    high = Column(Float)
+    low = Column(Float)
+    close = Column(Float)
+    volume = Column(Float)
+    source = Column(String)
+    created_at = Column(DateTime, default=func.now())
+
+================================================================================
+FILE: backend/database/models/market_regime.py
+
+from sqlalchemy import Column, DateTime, Float, Integer, String
+
+from backend.database.postgres import Base
+
+
+class MarketRegime(Base):
+    __tablename__ = "market_regimes"
+
+    id = Column(Integer, primary_key=True)
+    symbol = Column(String, index=True)
+    timestamp = Column(DateTime, index=True)
+    regime_score = Column(Float)
+    regime_label = Column(String)
+
+================================================================================
+FILE: backend/database/models/user.py
+
+from sqlalchemy import Column, DateTime, Float, Integer, String
+from sqlalchemy.sql import func
+
+from backend.database.postgres import Base
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String)
+    email = Column(String, unique=True, index=True)
+    risk_tolerance = Column(String)
+    capital = Column(Float)
+    investment_goal = Column(String)
+    created_at = Column(DateTime, default=func.now())
+
+================================================================================
+FILE: backend/schemas/__init__.py
+
+
+================================================================================
+FILE: backend/schemas/user_schema.py
+
+from datetime import datetime
+
+from pydantic import BaseModel
+
+
+class UserCreate(BaseModel):
+    name: str
+    email: str
+    risk_tolerance: str
+    capital: float
+    investment_goal: str
+
+
+class UserResponse(BaseModel):
+    id: int
+    name: str
+    email: str
+    risk_tolerance: str
+    capital: float
+    investment_goal: str
+    created_at: datetime
+
+    class Config:
+        orm_mode = True
+
+================================================================================
+FILE: configs/dev.env
+
+POSTGRES_HOST=localhost
+POSTGRES_PORT=5432
+POSTGRES_DB=neuroquant
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=Marthakimaaka%400
+
+REDIS_HOST=localhost
+REDIS_PORT=6379
+
+FRED_API_KEY=55c165d0d5f78c1fdc6778a9c074f9ba
+
+================================================================================
+FILE: logs/selected_features.json
+
+{
+  "active_features": [
+    "momentum_20",
+    "volatility_20",
+    "previous_regime_state",
+    "regime_change_flag",
+    "time_since_regime_change",
+    "volume_spike",
+    "correlation_cluster_strength",
+    "asset_market_corr_20",
+    "sma_50",
+    "RSI_14",
+    "high_vol_regime_flag",
+    "vol_adjusted_return_1",
+    "abnormal_volume_indicator",
+    "lag_rank_return_1"
+  ]
+}
+================================================================================
+FILE: scripts/export_repo_snapshot.py
+
+import os
+from pathlib import Path
+
+
+IGNORED_DIRS = {"__pycache__", "pycache", ".git", ".venv", "venv", "node_modules"}
+ALLOWED_EXT = {".py", ".txt", ".md", ".env", ".json", ".yaml", ".yml"}
+
+
+def is_ignored_dir(path: Path) -> bool:
+    # check each path part case-insensitively
+    return any(part.lower() in IGNORED_DIRS for part in path.parts)
+
+
+def is_text_file(path: Path) -> bool:
+    return path.suffix.lower() in ALLOWED_EXT
+
+
+def build_structure(root: Path) -> str:
+    lines = []
+    root_name = root.name
+    lines.append(f"{root_name}/")
+
+    # Walk deterministically by sorting directory names and filenames
+    for dirpath, dirnames, filenames in os.walk(root):
+        p = Path(dirpath)
+        try:
+            rel = p.relative_to(root)
+        except Exception:
+            rel = Path('.')
+
+        if is_ignored_dir(rel):
+            dirnames[:] = []
+            continue
+
+        dirnames[:] = sorted(d for d in dirnames if d.lower() not in IGNORED_DIRS)
+        filenames = sorted(filenames)
+
+        # compute indentation: top-level children (under root) have no indent
+        if str(rel) != '.':
+            indent_level = len(rel.parts)
+            indent = ' ' * 4 * indent_level
+            lines.append(f"{indent}{rel.name}/")
+
+        # list allowed files in this directory
+        files = [f for f in filenames if Path(f).suffix.lower() in ALLOWED_EXT and f != 'allcode.txt']
+        if files:
+            file_indent = ' ' * 4 * (len(rel.parts) + 1)
+            for fn in files:
+                lines.append(f"{file_indent}{fn}")
+
+    return "\n".join(lines)
+
+
+def write_file_contents(root: Path, out_path: Path):
+    with out_path.open("w", encoding="utf-8") as out:
+        out.write("PROJECT STRUCTURE\n")
+        out.write("==================\n")
+        out.write(build_structure(root))
+        out.write("\n\nFILE CONTENTS:\n")
+        out.write("==============\n")
+
+        for dirpath, dirnames, filenames in os.walk(root):
+            p = Path(dirpath)
+            if is_ignored_dir(p.relative_to(root)):
+                dirnames[:] = []
+                continue
+
+            dirnames[:] = [d for d in dirnames if d not in IGNORED_DIRS]
+
+            for fname in sorted(filenames):
+                if fname == out_path.name:
+                    continue
+                fpath = p / fname
+                if not is_text_file(fpath):
+                    continue
+
+                rel = fpath.relative_to(root)
+                out.write('\n' + '=' * 80 + '\n')
+                out.write(f"FILE: {rel.as_posix()}\n")
+                out.write('\n')
+
+                try:
+                    with fpath.open('r', encoding='utf-8', errors='replace') as fh:
+                        out.write(fh.read())
+                except Exception as e:
+                    out.write(f"Could not read {rel.as_posix()}: {e}\n")
+
+
+def main():
+    root = Path.cwd()
+    out = root / 'allcode.txt'
+    write_file_contents(root, out)
+    print('Repository snapshot exported to allcode.txt')
+
+
+if __name__ == '__main__':
+    main()
+
+================================================================================
+FILE: scripts/load_assets.py
+
+from pathlib import Path
+import sys
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from backend.database.models.asset import Asset
+from backend.database.postgres import SessionLocal
+
+
+SAMPLE_ASSETS = [
+    {"symbol": "AAPL", "name": "Apple Inc.", "asset_type": "stock", "exchange": "NASDAQ", "sector": "Technology"},
+    {"symbol": "MSFT", "name": "Microsoft Corporation", "asset_type": "stock", "exchange": "NASDAQ", "sector": "Technology"},
+    {"symbol": "NVDA", "name": "NVIDIA Corporation", "asset_type": "stock", "exchange": "NASDAQ", "sector": "Technology"},
+    {"symbol": "AMZN", "name": "Amazon.com, Inc.", "asset_type": "stock", "exchange": "NASDAQ", "sector": "Consumer Discretionary"},
+    {"symbol": "GOOGL", "name": "Alphabet Inc.", "asset_type": "stock", "exchange": "NASDAQ", "sector": "Communication Services"},
+    {"symbol": "META", "name": "Meta Platforms, Inc.", "asset_type": "stock", "exchange": "NASDAQ", "sector": "Communication Services"},
+    {"symbol": "TSLA", "name": "Tesla, Inc.", "asset_type": "stock", "exchange": "NASDAQ", "sector": "Consumer Discretionary"},
+    {"symbol": "BTC/USDT", "name": "Bitcoin / Tether", "asset_type": "crypto", "exchange": "Binance", "sector": None},
+    {"symbol": "ETH/USDT", "name": "Ethereum / Tether", "asset_type": "crypto", "exchange": "Binance", "sector": None},
+    {"symbol": "SOL/USDT", "name": "Solana / Tether", "asset_type": "crypto", "exchange": "Binance", "sector": None},
+    {"symbol": "BNB/USDT", "name": "BNB / Tether", "asset_type": "crypto", "exchange": "Binance", "sector": None},
+    {"symbol": "XRP/USDT", "name": "XRP / Tether", "asset_type": "crypto", "exchange": "Binance", "sector": None},
+    {"symbol": "GC=F", "name": "Gold Futures", "asset_type": "commodity", "exchange": "COMEX", "sector": None},
+    {"symbol": "SI=F", "name": "Silver Futures", "asset_type": "commodity", "exchange": "COMEX", "sector": None},
+    {"symbol": "CL=F", "name": "Crude Oil Futures", "asset_type": "commodity", "exchange": "NYMEX", "sector": None},
+    {"symbol": "FEDFUNDS", "name": "Federal Funds Effective Rate", "asset_type": "macro", "exchange": None, "sector": None},
+    {"symbol": "CPIAUCSL", "name": "Consumer Price Index for All Urban Consumers", "asset_type": "macro", "exchange": None, "sector": None},
+    {"symbol": "UNRATE", "name": "Unemployment Rate", "asset_type": "macro", "exchange": None, "sector": None},
+]
+
+
+def load_assets():
+    db = SessionLocal()
+    try:
+        for asset_data in SAMPLE_ASSETS:
+            existing_asset = db.query(Asset).filter(Asset.symbol == asset_data["symbol"]).first()
+            if existing_asset:
+                print(f"Skipped: {asset_data['symbol']}")
+                continue
+
+            db.add(Asset(**asset_data))
+            print(f"Inserted: {asset_data['symbol']}")
+
+        db.commit()
+        print("Asset loading complete")
+    finally:
+        db.close()
+
+
+if __name__ == "__main__":
+    load_assets()
+
+================================================================================
+FILE: scripts/regenerate_allcode.py
+
+import os
+
+
+def generate_allcode(root_dir, output_file):
+    with open(output_file, 'w', encoding='utf-8') as f:
+        f.write('PROJECT STRUCTURE:\n')
+        f.write('==================\n')
+        for root, dirs, files in os.walk(root_dir):
+            if '__pycache__' in root or '.git' in root:
+                continue
+            level = root.replace(root_dir, '').count(os.sep)
+            indent = ' ' * 4 * level
+            f.write('{}{}/\n'.format(indent, os.path.basename(root)))
+            sub_indent = ' ' * 4 * (level + 1)
+            for file in sorted(files):
+                if file == 'allcode.txt':
+                    continue
+                if file.endswith('.pyc'):
+                    continue
+                f.write('{}{}\n'.format(sub_indent, file))
+        f.write('\n\nFILE CONTENTS:\n')
+        f.write('==============\n')
+        for root, dirs, files in os.walk(root_dir):
+            if '__pycache__' in root or '.git' in root:
+                continue
+            for file in sorted(files):
+                if file == 'allcode.txt':
+                    continue
+                if file.endswith('.pyc'):
+                    continue
+                file_path = os.path.join(root, file)
+                try:
+                    with open(file_path, 'r', encoding='utf-8', errors='replace') as file_content:
+                        content = file_content.read()
+                    f.write('\n' + '='*80 + '\n')
+                    f.write(f'FILE: {os.path.relpath(file_path, root_dir)}\n')
+                    f.write('='*80 + '\n')
+                    f.write(content)
+                    f.write('\n')
+                except Exception as e:
+                    f.write(f'\nCould not read {file_path}: {e}\n')
+
+
+if __name__ == '__main__':
+    generate_allcode(os.getcwd(), 'allcode.txt')
+
+================================================================================
+FILE: scripts/verify_allcode.py
+
+from pathlib import Path
+import os
+
+IGNORED_DIRS = {"__pycache__", "pycache", ".git", ".venv", "venv", "node_modules"}
+ALLOWED_EXT = {".py", ".txt", ".md", ".env", ".json", ".yaml", ".yml"}
+
+
+def is_ignored_dir(path: Path) -> bool:
+    return any(part in IGNORED_DIRS for part in path.parts)
+
+
+def collect_text_files(root: Path):
+    files = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        p = Path(dirpath)
+        if is_ignored_dir(p.relative_to(root)):
+            dirnames[:] = []
+            continue
+        dirnames[:] = [d for d in dirnames if d not in IGNORED_DIRS]
+        for fn in sorted(filenames):
+            if fn == 'allcode.txt':
+                continue
+            fpath = p / fn
+            if fpath.suffix.lower() in ALLOWED_EXT:
+                files.append(fpath.relative_to(root).as_posix())
+    return files
+
+
+def verify(root: Path):
+    out_path = root / 'allcode.txt'
+    if not out_path.exists():
+        print('allcode.txt not found')
+        return 2
+
+    text_files = collect_text_files(root)
+
+    content = out_path.read_text(encoding='utf-8', errors='replace')
+
+    missing = []
+    for rel in text_files:
+        if f'FILE: {rel}' not in content:
+            missing.append(rel)
+
+    if missing:
+        print('Missing files in allcode.txt:')
+        for m in missing:
+            print(m)
+        print(f"Total missing: {len(missing)}")
+        return 1
+    else:
+        print('All text files are included in allcode.txt')
+        print(f'Total files checked: {len(text_files)}')
+        return 0
+
+
+if __name__ == '__main__':
+    import sys
+    root = Path.cwd()
+    rc = verify(root)
+    sys.exit(rc)
+
+================================================================================
+FILE: services/data_scheduler.py
+
+from pathlib import Path
+import sys
+import time
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from apscheduler.schedulers.background import BackgroundScheduler
+
+from agents.market_data_agent.fetch_crypto import fetch_crypto
+from agents.market_data_agent.fetch_macro import fetch_macro
+from agents.market_data_agent.fetch_stocks import fetch_stocks
+
+
+def run_stock_ingestion():
+    print("Running stock ingestion...")
+    fetch_stocks()
+
+
+def run_crypto_ingestion():
+    print("Running crypto ingestion...")
+    fetch_crypto()
+
+
+def run_macro_ingestion():
+    print("Running macro ingestion...")
+    fetch_macro()
+
+
+def start_scheduler():
+    scheduler = BackgroundScheduler()
+    scheduler.add_job(run_stock_ingestion, "interval", seconds=30)
+    scheduler.add_job(run_crypto_ingestion, "interval", seconds=20)
+    scheduler.add_job(run_macro_ingestion, "interval", seconds=40)
+    scheduler.start()
+
+    try:
+        while True:
+            time.sleep(60)
+    finally:
+        scheduler.shutdown()
+
+
+if __name__ == "__main__":
+    start_scheduler()
