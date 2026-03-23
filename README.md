@@ -1,6 +1,8 @@
 # NQ ALPHA
 
-![NQ ALPHA Architecture](output/doc/nq_alpha_architecture_paper.png)
+<p align="center">
+  <img src="output/doc/nq_alpha_architecture_paper.png" alt="NQ ALPHA Architecture" width="100%" />
+</p>
 
 NQ ALPHA is a regime-aware AI quant investment decision system that unifies live market analysis, transformer-based alpha inference, portfolio construction, backtesting, user memory, and a grounded local AI advisor into one aligned platform.
 

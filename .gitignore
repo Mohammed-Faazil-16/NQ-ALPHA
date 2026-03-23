@@ -7,3 +7,4 @@ frontend/dist/
 backend/vectorstore/chroma_data/
 data/yfinance_cache/
 backend/api/routes/test_write.tmp
+allcode.txt
