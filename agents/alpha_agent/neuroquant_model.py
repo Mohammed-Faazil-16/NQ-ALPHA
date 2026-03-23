@@ -37,7 +37,7 @@ class NeuroQuantAlphaModel(nn.Module):
                 d_model=self.hidden_dim,
                 nhead=4,
                 dim_feedforward=192,
-                dropout=0.1,
+                dropout=0.15,
                 batch_first=True,
                 activation="gelu",
                 norm_first=False,
@@ -50,7 +50,7 @@ class NeuroQuantAlphaModel(nn.Module):
                 input_size=self.hidden_dim,
                 hidden_size=self.hidden_dim,
                 num_layers=2,
-                dropout=0.1,
+                dropout=0.15,
                 batch_first=True,
             )
         else:
@@ -60,7 +60,7 @@ class NeuroQuantAlphaModel(nn.Module):
         self.alpha_head = nn.Sequential(
             nn.Linear(self.hidden_dim + 16, 64),
             nn.GELU(),
-            nn.Dropout(0.1),
+            nn.Dropout(0.15),
             nn.Linear(64, 1),
         )
 

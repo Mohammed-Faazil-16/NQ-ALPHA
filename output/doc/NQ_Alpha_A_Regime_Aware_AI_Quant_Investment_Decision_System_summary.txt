@@ -1,0 +1,8 @@
+Title: NQ Alpha: A Regime-Aware AI Quant Investment Decision System
+Word count: 4395
+Training assets: 30
+Accessible assets: 636
+Live feature count: 10
+References: 15
+Architecture image: nq_alpha_architecture_paper.png
+Document: NQ_Alpha_A_Regime_Aware_AI_Quant_Investment_Decision_System.docx

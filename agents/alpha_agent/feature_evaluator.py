@@ -28,6 +28,34 @@ def _safe_cross_sectional_ic(group, feature_name):
     return sample[feature_name].corr(sample["target_return"], method="spearman")
 
 
+def _feature_temporal_variance(df, feature_name):
+    symbol_variances = df.groupby("symbol", sort=False)[feature_name].var(ddof=0)
+    symbol_variances = symbol_variances.replace([np.inf, -np.inf], np.nan).dropna()
+    if symbol_variances.empty:
+        return 0.0
+    return float(symbol_variances.median())
+
+
+def _feature_distribution_shift(df, feature_name):
+    sample = df[["timestamp", feature_name]].replace([np.inf, -np.inf], np.nan).dropna()
+    if len(sample) < 10:
+        return np.inf
+
+    ordered_timestamps = sorted(sample["timestamp"].unique())
+    midpoint = len(ordered_timestamps) // 2
+    if midpoint == 0 or midpoint >= len(ordered_timestamps):
+        return np.inf
+
+    first_half = sample[sample["timestamp"].isin(ordered_timestamps[:midpoint])][feature_name]
+    second_half = sample[sample["timestamp"].isin(ordered_timestamps[midpoint:])][feature_name]
+    if len(first_half) < 5 or len(second_half) < 5:
+        return np.inf
+
+    median_shift = abs(float(first_half.median()) - float(second_half.median()))
+    spread_shift = abs(float(first_half.std(ddof=0)) - float(second_half.std(ddof=0)))
+    return median_shift + spread_shift
+
+
 def evaluate_feature_importance(df=None, save_path=FEATURE_IMPORTANCE_PATH):
     if df is None:
         df, _ = build_modeling_dataframes()
@@ -69,6 +97,8 @@ def evaluate_feature_importance(df=None, save_path=FEATURE_IMPORTANCE_PATH):
                 stability = np.inf
 
         global_corr = float(valid_frame[feature_name].corr(valid_frame["target_return"])) if len(valid_frame) >= 5 else 0.0
+        temporal_variance = _feature_temporal_variance(df, feature_name)
+        distribution_shift = _feature_distribution_shift(df, feature_name)
 
         results.append(
             {
@@ -79,6 +109,8 @@ def evaluate_feature_importance(df=None, save_path=FEATURE_IMPORTANCE_PATH):
                 "ic_mean": ic_mean,
                 "ic_std": ic_std,
                 "stability_over_time": stability,
+                "temporal_variance": temporal_variance,
+                "distribution_shift": distribution_shift,
                 "signal_score": abs(correlation_mean),
             }
         )
@@ -93,7 +125,15 @@ def evaluate_feature_importance(df=None, save_path=FEATURE_IMPORTANCE_PATH):
     return feature_stats
 
 
-def filter_features(feature_stats, df, correlation_threshold=0.01, std_threshold=0.1, correlation_ceiling=0.9):
+def filter_features(
+    feature_stats,
+    df,
+    correlation_threshold=0.03,
+    std_threshold=0.45,
+    correlation_ceiling=0.9,
+    variance_floor=0.30,
+    shift_ceiling=0.25,
+):
     if feature_stats.empty:
         return pd.DataFrame(), pd.DataFrame()
 
@@ -102,6 +142,8 @@ def filter_features(feature_stats, df, correlation_threshold=0.01, std_threshold
         (feature_stats["correlation_mean"].abs() > correlation_threshold)
         & (feature_stats["correlation_std"] < std_threshold)
         & (feature_stats["stability_over_time"] < std_threshold)
+        & (feature_stats["temporal_variance"] > variance_floor)
+        & (feature_stats["distribution_shift"] < shift_ceiling)
     ].copy()
 
     dropped_rows = []
@@ -111,6 +153,10 @@ def filter_features(feature_stats, df, correlation_threshold=0.01, std_threshold
             reason = "low_signal"
             if row["correlation_std"] >= std_threshold or row["stability_over_time"] >= std_threshold:
                 reason = "unstable_ic"
+            elif row["temporal_variance"] <= variance_floor:
+                reason = "low_temporal_variance"
+            elif row["distribution_shift"] >= shift_ceiling:
+                reason = "distribution_shift"
             dropped_rows.append({**row.to_dict(), "drop_reason": reason, "correlated_with": ""})
 
     if candidate_stats.empty:
@@ -121,7 +167,7 @@ def filter_features(feature_stats, df, correlation_threshold=0.01, std_threshold
 
     kept = []
     correlated_drops = []
-    for _, row in candidate_stats.sort_values("signal_score", ascending=False).iterrows():
+    for _, row in candidate_stats.sort_values(["signal_score", "distribution_shift", "stability_over_time"], ascending=[False, True, True]).iterrows():
         feature_name = row["feature_name"]
         correlated_with = next((kept_feature for kept_feature in kept if corr_matrix.loc[feature_name, kept_feature] > correlation_ceiling), None)
         if correlated_with is not None:

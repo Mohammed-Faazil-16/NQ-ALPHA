@@ -170,6 +170,10 @@ EXTREME_VALUE_THRESHOLD = 1_000.0
 TARGET_CLIP_VALUE = 1.0
 SPLIT_DATE = pd.Timestamp("2022-01-01")
 TARGET_HORIZON = 5
+FEATURE_SMOOTH_CURRENT = 0.7
+FEATURE_SMOOTH_PREVIOUS = 0.3
+TARGET_SMOOTH_CURRENT = 0.8
+TARGET_SMOOTH_PREVIOUS = 0.2
 LOGS_DIR = PROJECT_ROOT / "logs"
 ACTIVE_FEATURES_PATH = LOGS_DIR / "selected_features.json"
 
@@ -322,9 +326,15 @@ def _normalize_cross_sectional_rank(series):
 
 def _compute_rank_based_target(df):
     df = df.sort_values(["symbol", "timestamp"]).reset_index(drop=True).copy()
-    df["future_return"] = df.groupby("symbol")["log_return_1"].transform(_compute_future_return)
+    grouped = df.groupby("symbol", sort=False)
+    df["future_return"] = grouped["log_return_1"].transform(_compute_future_return)
     df["target_rank"] = df.groupby("timestamp")["future_return"].transform(_normalize_cross_sectional_rank)
-    df["target_return"] = df["target_rank"].clip(-1.0, 1.0)
+    previous_rank = grouped["target_rank"].shift(1)
+    df["target_return"] = (
+        TARGET_SMOOTH_CURRENT * df["target_rank"]
+        + TARGET_SMOOTH_PREVIOUS * previous_rank.fillna(df["target_rank"])
+    )
+    df["target_return"] = df["target_return"].clip(-1.0, 1.0)
     df["target_return"] = df["target_return"].replace([np.inf, -np.inf], np.nan)
     return df
 
@@ -348,6 +358,20 @@ def _compute_time_since_change(flags):
             since += 1
         steps.append(float(since))
     return pd.Series(steps, index=flags.index, dtype=float)
+
+
+def _apply_temporal_feature_smoothing(df, feature_names):
+    grouped = df.groupby("symbol", sort=False)
+    for feature_name in feature_names:
+        if feature_name not in df.columns:
+            continue
+        previous_values = grouped[feature_name].shift(1)
+        smoothed = (
+            FEATURE_SMOOTH_CURRENT * df[feature_name]
+            + FEATURE_SMOOTH_PREVIOUS * previous_values.fillna(df[feature_name])
+        )
+        df[feature_name] = smoothed
+    return df
 
 
 def _compute_research_features(df):
@@ -558,8 +582,10 @@ def load_training_dataframe():
             df["volume"] = np.nan
 
         df = _compute_research_features(df)
+        df = _apply_temporal_feature_smoothing(df, FEATURE_COLUMNS)
 
         print("Using cross-asset enhanced features")
+        print("Applying temporal feature smoothing")
         print("Using financial alpha factors")
         print("Using new information source features")
         print("Using strict cross-sectional normalization inputs")

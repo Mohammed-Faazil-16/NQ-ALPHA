@@ -20,7 +20,7 @@ from agents.alpha_agent.loss_functions import masked_mse_loss
 from agents.alpha_agent.neuroquant_model import NeuroQuantAlphaModel
 
 
-EPOCHS = 20
+EPOCHS = 10
 BATCH_SIZE = 1
 LEARNING_RATE = 5e-4
 MAX_FEATURE_ABS = 20.0
@@ -61,7 +61,7 @@ def train_alpha_model(
         batch_size=BATCH_SIZE,
         shuffle=True,
         num_workers=0,
-        pin_memory=True,
+        pin_memory=torch.cuda.is_available(),
     )
 
     model = NeuroQuantAlphaModel(feature_dim=len(active_features)).to(device)

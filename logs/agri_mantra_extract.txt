@@ -1,0 +1,578 @@
+--- PAGE 1 ---
+Agri -Mantra: An AI -Powered Comprehensive Agriculture 
+Management Platform for Indian Farmers  
+Abstract  
+Agriculture in India stays very vulnerable to changes in climate, pest incidents and fluctuations in 
+market conditions, which negatively impact livelihoods for millions of smallholder farmers. This 
+paper presents an Agri -Mantra, an artificial intelligence -based smart farming assistant that gives 
+opportunity to access actionable information during the crop lifecycle. The described system 
+employs a Hierarchical TOPSIS procedure for recommending the best crops, an new 
+Convolutional Neural Network design (Effic ientNetB3 along with Convolutional Block Attention 
+Module as well as Coordinate Attention) for dependable plant disease detection, and also uses 
+time-series Transformer component to predict climate.Also, the platform combines an efficient 
+algorithm for mul ti-source market aggregation and multilingual conversation system operated by 
+Large Language Model (LLM). This paper describes the architecture of the system, algorithms 
+underlying it, experiment evaluation methods and applicability in real -world scenario on edge 
+devices. The implemented disease identification model obtain accuracy of 99.67% over 48 -class 
+dataset; meanwhile the multi -criteria crop recommender attains five -fold cross -validation accuracy 
+equal to 74.22%.  
+Keywords:  Precision Agriculture, Deep Learning, Explainable AI, TOPSIS, Time -Series 
+Transformers, Multi -Criteria Decision Making, Edge Inference, Multilingual Conversational 
+Agents, Market Price Forecasting.  
+1. Introduction  
+Agriculture establishes foundation for Indian economy. It acts as an main livelihood for more than 
+58% of individuals and contributes importantly to the national Gross Domestic Product (GDP) 
+[25]. However, this sector stays highly exposed to many interconn ected systemic issues. One of 
+central concerns is meteorological uncertainty. Variations caused by the Indian Ocean Dipole and 
+El Niño -Southern Oscillation (ENSO) result in serious monsoon irregularity, driving up 
+occurrences of both strong droughts and di sastrous floods [16], [17].At same time, worldwide 
+supply chain disturbances together with local infrastructural obstacles lead to high unpredictability 
+in commodity prices [14]. Smallholder farmers who often function on slim profitability without 
+formal f inancial defenses face a combination of climatic and economic instabilities which makes 
+agriculture extremely unstable occupation.  
+Adding to these broad macroeconomic as well as weather -related difficulties is lack of accessible 
+hyper -local agronomic information. Conventional agricultural extension services are limited 
+because of infrastructure constraints. Therefore there are delayed  general advice that can't address 
+site-based necessities. Nowadays a modern Indian farmer wishing for the best crop selection, 
+timely pest prevention or market prediction needs to go through an uncoordinated ecosystem made 
+
+--- PAGE 2 ---
+from different platforms [24]. Weather applications do not connect with market price portals and 
+crop disease diagnosis tools seldom check chemical treatment suggestions with the financial 
+capacity of farmer.Also most digital agronomy resources work only i n English language, creating 
+major linguistic boundary for farmers communicating through local dialects [18], [19].  
+The latest developments seen in Deep Learning, Machine Learning plus Generative Artificial 
+Intelligence (GenAI) gives an opportunity to access innovations which could transform the 
+precision agriculture [6], [10]. Nevertheless such technological progress f requently remains inside 
+academic institutions or commercial scale agri -businesses only. The big computational 
+requirements required by deep computer vision models along with complex rules applied by multi -
+objective decision -making algorithms often prevent s distribution among rural smallholders 
+demographic who can get maximum advantage from them [20].  
+In response to imbalance, the paper introduces an Agri -Mantra, which is a unified and highly 
+localized digital agronomy platform. Agri -Mantra gives an opportunity to access advanced 
+agronomic intelligence by reducing the existing fragmentation of platforms  and barriers with 
+accessibility. The system includes robust XGBoost models that are being used for multi -level crop 
+and soil analysis uses attention -augmented deep Convolutional Neural Networks (CNNs) to 
+perform instantaneous as well as explainable comput er vision diagnostics, and applies advanced 
+GenAI pipelines so that a smooth compatibility of multilingual interactions can be achieved. This 
+paper explains architecture of the system, algorithm uses and strict edge deployment benchmarks 
+of Agri -Mantra. It  shows its practical viability for wide adoption in the Indian agricultural sector.  
+ 2. Literature Survey  
+Edge -Optimized Leaf Disease Detection and XAI: Deploying robust diagnostic models straight to 
+devices with limited resources is remaining as a major challenge in agricultural AI. Piccialli et al. 
+[1] proposed an AGRIFOLD, that is a framework for optimized leaf disease detection integrating 
+treatment recommendations planned at edge deployment. This particular paper supports my project 
+content by acting as the main base paper especially it validates core method of Agri -Mantra 
+employs for localized computer vi sion classification and integration of Explainable AI (XAI) 
+which ensure more transparent diagnosis, we adapted these ideas for our deployed architecture.  
+Machine Learning for Crop Recommendation: Traditional systems often rely only on basic 
+matching between soil and climate factors. Dey et al. [2] and Afzal et al. [3] successfully used 
+models such as XGBoost and Random Forest ensembles achieving up to 99% a ccuracy by using 
+the NPK, pH along with climatic variables. These studies are supporting my project because they 
+validated our selection of an XGBoost model for baseline soil analysis which we have included 
+directly as foundational agronomic scoring layer inside our recommendation pipeline.  
+Multi -Criteria Decision Making (MCDM) in Agriculture: Moving beyond simple crop yield 
+predictions means balancing multiple competing criteria at once. Sathiyamurthi et al. [4] used the 
+AHP -TOPSIS approach for geospatial suitability assessment whereas Shast ri et al. [5] integrated 
+
+--- PAGE 3 ---
+Explainable AI (SHAP) into gradient boosting recommenders providing interpretable results in 
+decision process. This research supports my project by showing that relying on just soil data is not 
+sufficient ; it gives an opportunity to explain integration of  Agri-Mantra’s TOPSIS algorithm so 
+both agronomic viability and market economics can be balanced simultaneously.  
+Edge AI and Lightweight Vision Models: Deploying deep learning approaches in rural areas 
+requires extreme parameter optimization because resource constraints present there everyday. 
+Karim et al. [6] together with Nnamdi and Abolghasemi [10] have shown high ly compressed 
+models like MobileNetV3 or V²PlantNet (below 1.5 MB) achieved more than 98% disease 
+classification accuracy on edge hardware such as Jetson Nano while Bhagat et al.[20] showed real -
+time inference at 34 FPS was viable solution there too.These findings are directly supporting my 
+project's deployment strategy since they prove optimized CNNs can execute locally even on 
+smartphones with low resources targeted by the Agri -Mantra platform.  
+Attention Mechanisms in Convolutional Networks: To improve localization of small disease 
+lesions appearing on complicated leaf backgrounds these days modern architectures use attention 
+modules. Ashurov et al.[7], Duhan et al.[8], Unal[9] clearly showed how  integration of Squeeze -
+and-Excitation (SE), CBAM within EfficientNet backbones increased diagnostic accuracy greatly. 
+This literature is justifying architectural choice made especially injecting CBAM plus Coordinate 
+Attention layers into our EfficientNetB 3 model so precision gets maximized across our full dataset 
+including forty eight classes .  
+Explainable AI (XAI) for better Diagnostic Transparency: Black -box AI models are not really 
+adopted much by users who want to see images or proof of their disease. As said in Alhammad et 
+al. [11], Sudhakar et al. [12], and also Pal et al. [13], some XAI me thods like Grad -CAM or the 
+LIME were applied and generated heatmaps to explain areas of crops that are impacted. These 
+publications add support to my project because they talk about why the trust of farmers should 
+exist; they also approve our including Gra d-CAM heatmaps so farmers or users can look at and 
+check by themselves how AI came to its diagnosis.  
+Deep Learning Approaches for Predicting Commodity Prices: Agricultural pricing in India has lot 
+of unpredictability, so it is absolutely necessary for the advanced predictions. Harish Nayak et al. 
+[14] with Manogna et al. [15] used models such as NBEATSX, deep RNN (LSTM/GRU), and 
+Transformers saying these are way better than basic ARIMAX models when it comes to crops like 
+potato and onion prices.This gives direct support to our economic layer and matches Agri -Mantra’s 
+use of an horizon -adaptive XGBoost -Prop het hybrid system, which tries to keep farmers from fast 
+market drops.  
+Climate and Weather Forecasts Combining Space -Time Factors: If you want better agronomy, it 
+is important to guess weather events far ahead. Jiang et al. [16] as well as Wu et al. [17] showed 
+how Conv -Transformer and ConvLSTM together set a new level for ma ny-variable longer -term 
+weather prediction in agriculture. These works encourage my project by confirming that 
+
+--- PAGE 4 ---
+transformer models can do good job in forecasting strong weather used as a strict biological filter 
+in our crop advisory steps.  
+Multilingual LLMs for Agricultural Extension: Language barrier is a main trouble in rural farming 
+digitization. Ibrahim et al. [18] and Kpodo et al. [19] have presented that specialized LLMs and 
+different ChatGPT types often do better than regular extensio n individuals in giving local -language 
+and suitable farming tips. This gives evidence for our conversational platform that uses Llama 
+LLMs with translators, so gap from language in Indian small farms can be tackled.  
+Integration of Data from Multiple Sources and Use of Knowledge Graphs: For reliable data, 
+crossing different information and stopping AI errors is needed. Deforce et al. [21] employed 
+fusion transformers for IoT in agriculture. Yan et al. [22] and Wang and  Zhao [23] also proved 
+that strict farm Knowledge Graphs are very effective. All of these support the backend stack of 
+mine by supporting our idea for collecting several market data sources and by keeping  
+3. Existing System Challenges  
+The agricultural technology environment of India is facing three main structural problems. One 
+problem is like platform fragmentation; farmers must use many separate apps that are not 
+connected. Tools for weather forecasting, market prices and disease dete ction are kept apart which 
+does not show how these things are related in farming decisions.Weather affects how likely 
+diseases are, and that makes treatment costs to change. The second issue is a linguistic exclusion. 
+Most state -of-the-art diagnostic platf orms work only in English language, and this leaves out many 
+smallholder farmers who usually speak local languages. The third concern is with the advisory 
+models, which are mostly static. Crop recommendation systems usually focus on wide agro -
+climatic zone s or an basic NPK matching. They do not include current market prices, available 
+water that changes or forecasts for climate. This can mean suggestions are good for growing crops 
+but do not make money sense. Also disease detection commercial models are har d to understand, 
+giving probability numbers without pictures and lowering farmer trust.  
+4. Proposed System Advantages  
+Agri-Mantra makes direct approach to all the mentioned structural problems. It uses a merged and 
+very local platform by combining different modules so they fit together as an decision support for 
+farming. The platform gives joined -up intelligence because i t mixes soil checking, economic 
+prediction, and weather predictions into one recommendation tool.With this, people get farming 
+advice that is both good for plants and also helps make money at same time. For problems with 
+accessibility, there is voice inter face using different languages. With the Bhashini translation API 
+and Llama 3.3 70B LLM added, it lets people talk with platform in more than eight types of Indian 
+languages [18], [19]. This turns system away from just being a portal for reading into more usable 
+a digital helper. Also Explainable AI is important for the Agri -Mantra. Grad -CAM heatmaps [11], 
+[13] show pictures of where the sickness of plant is, and the natural language recommendations 
+from LLM tell the reasons for crop advice which makes user s like platform more. For data it has 
+
+--- PAGE 5 ---
+system for joining market sources that score confidence dynamically so price guesses stay good, 
+which works even sometimes when government API is not working [21].  
+5. Motivation and Goal  
+The main reason for bringing up Agri -Mantra system is how fast gap gets bigger between advanced 
+research in agriculture from universities and real, tough situation that Indian farmers deal with 
+these days. Even though there are deep learning vision models and algorithms with multiple criteria 
+that get record levels of accuracy in universities, these technologies do not really help much to 
+farmers having small farms who are struggling with random rains and unpredictable market price 
+changes. This gap in tech nology often puts farmers again and again under big debts because they 
+make less good decisions for planting or using treatments. So, the most important goal in this 
+project is not just making prediction models with high accuracy that do not connect to rea l life but 
+to build a very easy -to-use, combined digital platform. The plan is to make smart digital helper 
+that can work like a local expert on farming; it runs even on simple devices and does not need 
+having super computers or being good at English. Givi ng the farmers fast and strong information 
+that is aware about the money, Agri -Mantra tries to increase crop results, make sure the money 
+part works out and lower the many environmental and market dangers farmers face now. . 
+6. Architecture Diagram  
+As illustrated in Fig. 1 , the Agri-Mantra system uses an detailed and multi -level kind of data 
+handling structure which is for turning basic farming materials into a useful complex information. 
+There is chain of linked layers in the operation of the system.To begin with, the Input Lay er brings 
+in many types of data, either structured or not. It takes in exact farming factors, like Soil Data with 
+levels of Nitrogen, Potassium Phosphorus and pH together with the local weather elements 
+(Rainfall, Humidity, Temperature) and even GPS locati ons. At the same time, the platform also 
+gets clear media, such as a JPEG or an PNG crop leaf pictures plus text -based and sou nd user 
+questions.   
+ 
+Figure 1: High-level system architecture of the Agri -Mantra platform  
+
+--- PAGE 6 ---
+To make these diverse types of data similar for later processing, the inputs are sent through reliable 
+Data Preprocessing and Feature Extraction system. Images with the foliage are changed into 
+tensors and also normalized mathematically which is needed for  doing deep learning predictions. 
+At same time, user questions handled by an auto tokenization and regional language matrices 
+checking. When cleaning is finished,this data goes to the Feature Extraction, where strong 
+convolutional maps are pulled from imag es and word embeddings from prepared queries are 
+created. You know, this process kind of ensures that the important features of data of user are 
+retained properly and the output is consistent for model training and predictions.  
+The Core Processing Layer is consisting of five specialized sub -systems. The 'Weather Prediction' 
+module sends data through an Holt -Winters algorithm, which is integrated with the Open -Meteo 
+REST APIs. The 'Market Prices' module collects commodity informat ion from state repositories. 
+In the 'Crop Prediction' pipeline, Extreme Gradient Boosting (XGBoost) models are joined with a 
+TOPSIS multi -criteria decision analysis method. The 'Disease Detection' module employs an 
+EfficientNetB3 backbone that has been enh anced with Convolutional Block Attention (CBAM), 
+Coordinate Attention (CA) blocks as well Grad -CAM to provide visual explainability. Finally, 
+there is the 'Chatbot Advisory' module that uses the Llama LLM connected through Bhashini 
+translation protocols. T his core layer keeps continuous bidirectional synchronization with an 
+expandable relational database to achieve low -latency state retrievals. Module outputs are being 
+synthesized inside 'Fusion & Decision' logic block, and this block resolves conflicts 
+algorithmically before sending the finalized intelligence payload toward the Output interface. It is 
+kind of impressive how the accuracy of the predictions rely heavily on the quality of datasets and 
+the optimization of parameters. The efficiency of the overa ll system, you know, also depends on 
+smooth integration between modules and minimal redundancy.  
+ 7. Module Explanation with Implementation  
+7.1 Hierarchical Crop Recommendation Pipeline  
+Traditional crop recommendation systems often use basic and additive Machine Learning 
+classifiers which connect soil's NPK value to an recommendable crop [2], [3]. Agri -Mantra 
+diverges from such oversimplified method by introducing an innovative, 6 -Layer H ierarchical 
+Pipeline that is strongly inspired by the FAO Global Agro -Ecological Zones (GAEZ) framework 
+and multi -criteria decision analysis [4], [5].  
+ 
+The pipeline starts with a Location & Zone Gate. This one is rule -based filter giving an opportunity 
+to access and then instantly reduces an initial database of more than 500 possible crops into subset 
+of geographically suitable candidates depending on the  user's localized Indian agro -climatic zone 
+as well seasonal planting period. The remaining crops are being sent through Climate Hard Filter 
+where they are evaluated against predicted temperature and precipitation matrix for 120 
+days.Crops get eliminated w hen forecasted climate is outside their biological survival ranges or 
+environment does not meet minimum Growing Degree Days (GDD) needed for maturation:  
+ 
+
+--- PAGE 7 ---
+𝐺𝐷𝐷𝑑𝑎𝑦 =max (0,min (𝑇𝑎𝑣𝑔,𝑇𝑐𝑎𝑝)−𝑇𝑏𝑎𝑠𝑒 ) 
+where 𝑇𝑎𝑣𝑔 refers to daily average temperature, while 𝑇𝑏𝑎𝑠𝑒 indicates an crop -specific minimum 
+baseline temperature needed for metabolic activity. 𝑇𝑐𝑎𝑝 is defined as maximum threshold of 
+temperature after which growth stops.  
+After climate evaluation, the Water Budget Hard Filter calculates total available water by 
+estimating the Effective Rainfall through USDA Soil Conservation Service (SCS) method then 
+adding it to a standardized volumetric output capacities from farmer's dec lared irrigation method:  
+𝑊𝑡𝑜𝑡𝑎𝑙 =(0.70×𝑅𝑎𝑖𝑛𝑓𝑎𝑙 𝑙𝑡𝑜𝑡𝑎𝑙 )+𝐼𝑟𝑟𝑖𝑔𝑎𝑡𝑖𝑜 𝑛𝑠𝑢𝑝𝑝𝑙𝑦  
+Any crop that projects a severe water deficit (greater than 30% of required volumetric saturation) 
+are aggressively penalized or rejected. Afterwards the Soil Hard Filter combines the essential 
+agronomic limits like absolute pH bounds with an XGBoost multi -class classifier[2], [5]. This 
+evaluates seven features  N, P, K, Temperature, Humidity pH and Rainfall  to generate a 
+probabilistic soil suitability score:  
+𝑃(𝑐𝑟𝑜𝑝𝑖|𝑋)=𝑋𝐺𝐵𝑜𝑜𝑠𝑡 (𝑁,𝑃,𝐾,𝑇,𝐻,𝑝𝐻,𝑅) 
+The final ranking uses Multiplicative TOPSIS Scoring [4], calculating normalized Euclidean 
+distances towards a positive ( 𝐴+) and negative  (𝐴−) ideal solutions  
+𝐷𝑖+=√∑𝑤𝑗(𝑣𝑖𝑗−𝑣𝑗+)2,   𝐷𝑖−=√∑𝑤𝑗(𝑣𝑖𝑗−𝑣𝑗−)2 
+𝐶𝑖=𝐷𝑖−
+𝐷𝑖++𝐷𝑖− 
+Here 𝑣𝑖𝑗 means the normalized weighted value of criteria 𝑗 for crop 𝑖. Then the closeness 
+coefficient 𝐶𝑖 is combined using Liebig's Law as weighted geometric product between the 
+agronomic and economic sub -scores:  
+𝑆𝑐𝑜𝑟 𝑒𝑓𝑖𝑛𝑎𝑙 =𝑆𝑐𝑜𝑟 𝑒𝑎𝑔𝑟𝑜𝑛𝑜𝑚𝑖𝑐0.6×𝑆𝑐𝑜𝑟 𝑒𝑒𝑐𝑜𝑛𝑜𝑚𝑖𝑐0.4 
+At the last stage winning crop parameters are formatted into a JSON context window to inject them 
+into LLM so a natural -language justification for recommendation can be generated.  
+7.2 Crop Disease Detection with Explainable AI  
+The disease detection part finds 48 health and disease options from 17 different Indian crops.  For 
+training, more than an 159,000 leaf images were used, including trusted Plant  Village dataset 
+images and some regional pictures that were selected.  
+
+--- PAGE 8 ---
+The structure uses EfficientNetB3 for base, with CBAM and a Coordinate Attention (CA) added 
+in. CBAM puts channel attention and then spatial attention in sequence:  
+𝑀𝑐(𝐹)=𝜎(MLP (AvgPool (𝐹))+MLP (MaxPool (𝐹))) 
+𝑀𝑠(𝐹)=𝜎(Conv ([AvgPool (𝐹);MaxPool (𝐹)])) 
+𝐹′=𝑀𝑠(𝑀𝑐(𝐹)⊗𝐹)⊗(𝑀𝑐(𝐹)⊗𝐹) 
+Here, 𝑀𝑐is for channels and 𝑀𝑠 is for spatial attention. 𝜎 stands for sigmoid function and ⊗ means 
+element -wise multiplication.  Coordinate Attention takes spatial attention and breaks it in two 
+directions, height and width, so exact locations for lesions are saved.  
+In order for users to believe in system, it makes class activation heatmaps using:  
+𝐿Grad -CAM𝑐=ReLU (∑𝛼𝑘𝑐
+𝑘⋅𝐴𝑘) 
+ 
+Figure 2: Grad -CAM visualizations 
+demonstrating the model's precise 
+spatial localization of disease 
+lesions across varying crop types  
+
+--- PAGE 9 ---
+with 𝛼𝑘𝑐=1
+𝑍∑∑𝜕𝑦𝑐
+𝜕𝐴𝑖𝑗𝑘 𝑗𝑖  which shows gradient weights by class  𝑐 for feature map 𝐴𝑘. To ensure 
+diagnostic transparency, Fig. 2  displays the generated Grad -CAM heatmap s,visually the actual 
+disease -influenced areas that were important for network classification.  
+7.3 Hybrid Ensemble Price Forecasting  
+Because extreme volatility is present in Indian agricultural markets [14], Agri -Mantra employs 
+time-horizon weighted ensemble by combining an XGBoost and the Prophet models [14], [15]. 
+The weight of ensemble, 𝛼, is being computed dynamically as continuous function according to 
+forecast horizon ℎ (in days):  
+𝛼(ℎ)=max (0.2,1−ℎ
+120) 
+𝑃̂ensemble =𝛼(ℎ)⋅𝑃̂XGBoost +(1−𝛼(ℎ))⋅𝑃̂Prophet  
+For predictions on short -term ( ℎ ≤ 30 𝑑𝑎𝑦𝑠 ), XGBoost dominates, using engineered features like 
+moving averages, momentum indicators [14]. For long -term prediction ( h > 90 days), Prophet 
+dominates with additive decomposition model that gives an opportunity to capture the trends and 
+yearly seasonality among 31 commodity models [15].This shows how models' performance varies 
+with horizon.  
+7.4 Intelligent Multi -Source Market Aggregation  
+To address single -point government API failures [21], the background service simultaneously  
+scrapes real -time price telemetry from the Agmarknet, eNAM  and NCDEX endpoints. If several 
+sources provide contradictory prices for a same markets, continuous weighted average is computed 
+using historical reliability matrices:  
+𝑃𝑤𝑒𝑖𝑔 ℎ𝑡𝑒𝑑=∑(Price 𝑖×Weight 𝑖)
+∑Weight 𝑖 
+The system gives an opportunity to assign a 'High' confidence metric only when aggregated price 
+are corroborated by at least two independent sources.  This is important because it improves the 
+reliability of data received and reduces chances for errors in decision making.  
+7.5 Deep Learning Climate Forecasting  
+The climate module uses an Conv -Transformer hybrid architecture [16], [17] which is trained on 
+20 years (2004 –2023) of IMD gridded dataset at 0.25° × 0.25° spatial resolution. For each grid 
+cell, this model takes as input 365 -day lookback window  𝑋∈𝑅𝟛𝟞𝟝 ×𝟟.The humidity value is being 
+estimated from temperature ranges according to following expression:  
+
+--- PAGE 10 ---
+𝐻𝑒𝑠𝑡=100 ×exp (17.27×𝑇𝑚𝑖𝑛
+𝑇𝑚𝑖𝑛+237 .3−17.27×𝑇𝑚𝑎𝑥
+𝑇𝑚𝑎𝑥 +237 .3) 
+The transformer encoder performs scaled dot -product attention over temporal sequence using 
+$h=4$ attention heads:  
+Attention (𝑄, 𝐾, 𝑉) = softmax (𝑄𝐾𝑇
+√𝑑𝑘) ⋅ 𝑉 
+MultiHead (𝑄,𝐾,𝑉)=Concat (head 1,…,head ℎ)⋅𝑊𝑂 
+A convolutional decoder transfers encoding toward a forecast horizon of 120 days 𝑌̂∈𝑅𝟙𝟚𝟘 ×𝟛 for 
+predicting [rain ,𝑇𝑚𝑎𝑥,𝑇𝑚𝑖𝑛] while minimizing an extreme -event weighted Huber loss function:  
+𝐿=1
+𝑁∑𝑤𝑖⋅HuberLoss (𝑦𝑖̂,𝑦𝑖), where 𝑤𝑖=1+𝛽⋅𝟙(𝑦𝑖>𝜏) 
+The training is performed end -to-end using Adam optimizer with learning rate of 0.001.The batch 
+size is set to 64. This method showed promising results for rainfall and temperature forecast over 
+Indian subcontinent, kind of proving efficiency of model. Occ asionally, this approach struggles 
+for rare extreme events but overall it works well with reasonable accuracy.  
+7.6 Multilingual Voice and Text Conversational Agent  
+The communication part includes an  query engine that is limited lot so that people can understand 
+language and get facts correctly [18], [19]. In backend, Bhashini APIs help find out what regional 
+language script is written and turn these into an English quick for use inside the Llama 3.3 70B 
+system. A special protocol is set to collect personal session history such as weather or old diagnosis 
+and put it to JSON state file, then added quietly into main LLM prompt.Also, for stopping making 
+a toxic advice up, the system uses structured agrari an knowledge graphs for all generated answers 
+only [22], [23].  
+7.7 Automated Data Updates & Background Scheduling  
+To guarantee real -time data ingestion without causing an inference latency rise, architecture uses 
+the APScheduler [21]. It is embedded asynchronously in the active FastAPI lifecycle. The 
+scheduler forces background executions of demanding data jobs like p olling an Open -Meteo REST 
+APIs every 3 hours and beginning the bulk Agmarknet data drops each 6 hours, which gives an 
+opportunity to ensure frontend UI is operating constant with a highly accurate intelligence.It is 
+kind of important for smooth functioning . 
+8. Results and Discussion  
+8.1 Rigorous Benchmarking & Ablation Studies  
+A. Disease Detection (Ablation Study)  
+
+--- PAGE 11 ---
+To show superiority of the proposed architecture, baseline models are evaluated with a holdout 
+test set containing 31,800 images. As outlined in Table I, the ResNet -50 baseline obtains an 
+99.76% accuracy but it needs massive parameter footprint around 25.6 M. By embedding a 
+Coordinate Attention (CA) and Convolutional Block Attention Module (CBAM) layers into the 
+EfficientNet backbone in kind of strategic way, the lightweight network is forced to concentrate 
+entirely on diseased leaf lesions. This gives an op portunity to access performance where the 
+proposed model achieves 99.67% accuracy.It rivals the monolithic models identically while 
+requiring less than half of parameters (12.8M compared with 25.6M) which makes it the best for 
+deployment onto the low -power  agricultural Edge AI devices.  
+Table I: Disease Detection Model Comparison  
+Architecture  Parameters 
+(M) Accuracy 
+(%) Precision  F1-
+Score  FPR  
+ResNet -50 (Baseline)  ~25.6  99.76  99.14  98.84  0.0001  
+MobileNetV3 (Lightweight)  ~5.4 98.95  97.99  98.21  0.0002  
+EfficientNetB3 (Vanilla)  ~12.2  99.50  98.60  98.50  0.0005  
+EfficientNetB3 + CBAM  ~12.5  99.55  98.70  98.60  0.0003  
+EfficientNetB3 + CBAM + 
+CA ~12.8  99.67  98.92  98.79  0.0001  
+ 
+The graphical comparison presented in Fig. 3  visually reinforces this efficiency, demonstrating 
+how the proposed attention -augmented architecture achieves performance parity with ResNet -50 
+while drastically reducing the parameter footp rint. Furthermore, the robust crop -level 
+classification capabilities of the model are detailed in the confusion matrix shown in Fig. 4 , which 
+records a 99.64% overall vali dation accuracy with minimal cross -class misclassification.  
+
+--- PAGE 12 ---
+ 
+Figure 3 : Performance metrics and parameter size comparison across evaluated CNN architectures.  
+ 
+Figure 4 : Validation confusion matrix for the disease detection module  
+B. Crop Recommendation (Pipeline Benchmark)  
+The complete 6 -Layer hierarchical pipeline was evaluated in comparison with conventional 
+XGBoost baseline on 1,000 artificial test locations covering an important Indian agro -climatic 
+zones. The XGBoost baseline produced its predictions only by using soil and climate 
+characteristics, while Agri -Mantra uses a real -time climate forecasting, water balance calculations 
+and a scoring that considers policies.  The step -by-step elimination of agronomically and 
+economically unviable crops is quantitatively detailed in Table II , which tracks the average layer -
+by-layer rejection rates.  
+Table II: Pipeline Layer Filtering Rates (avg. across 1,000 test locations)  
+
+
+--- PAGE 13 ---
+Pipeline Layer  Candidates In  Passed  Rejection Rate (%)  
+Layer 1 — Zone Gate  43.0 8.9 79.3 
+Layer 1.5 — Season Filter  8.9 6.2 30.3 
+Layer 2 — Climate (GDD + Temp)  6.2 5.4 12.9 
+Layer 3 — Water Budget  5.4 2.7 50.0 
+Layer 4 — Soil (XGBoost + pH)  2.7 2.7 0.0 
+Layer 5 - Multiplicative Rank  5 Top 5    — 
+ 
+The Agri -Mantra pipeline suggested an crops forecasting 34% higher typical market yield 
+(₹/hectare) in comparison with the XGBoost  baseline. The baseline often recommended crops 
+which are agronomically best, but some of them were not economically viable or seasonally 
+suitable.  
+C. Price Forecasting Accuracy  
+The hybrid ensemble price forecasting system has been assessed for all 31 commodity models 
+trained by using held -out test data. Table III shows a Mean Absolute Percentage Error (MAPE). 
+The horizon -based weighting strategy gave an opportunity to access the best contribution from 
+each model where XGBoost is used to capture short -term momentum and Prophet is used for 
+modeling long -term seasonal patterns. Sometimes, it is kind of difficult to decide which model 
+performs best but overall results look good. I thi nk the combination of these models works 
+effective for this problem.  
+Table III: Price Forecast MAPE by Commodity  
+Commodity  Data 
+Points  XGBoost MAPE 
+(%) Prophet MAPE 
+(%) Ensemble MAPE 
+(%) 
+Apple  2,499+  5.63 13.48  7.98 
+Rice 2,497+  1.34 10.08  3.96 
+Wheat  2,493+  2.42 6.00 3.49 
+Onion  2,499+  4.41 77.08  26.21  
+Cotton  2,488+  0.78 6.72 2.56 
+Potato  2,499+  3.78 18.41  8.17  
+D. Climate Forecasting Validation  
+The regime -based together with a deep learning climate modules were thoroughly backtested  using 
+actual IMD gridded observations, where 2023 was used as fully unseen test year in twenty 
+geographically stratified locations. A detailed evaluation of the Mean Absolute Error (MAE) and 
+cumulative rainfall accuracy for each tested forecasting strategy is provided in Table IV. 
+Table IV: Climate Forecast Method Comparison (120 -day horizon)  
+
+--- PAGE 14 ---
+Method  MAE 
+(mm/day)  Regime Accuracy 
+(%) Cumulative Error 
+(%) 
+Regime -Based (P50)  5.24 52.9 77.8 
+Neural Net (Conv -
+Transformer)  5.19 49.7 92.4 
+Blended (80% DL + 20% 
+Regime)  5.15 49.7 89.5 
+ 
+The blended method (80 percent deep learning and 20 percent mathematical) obtained the best 
+daily MAE at 5.15 mm per day.However, regime -based method showed more reliable cumulative 
+rainfall accuracy (77.8% vs 92.4% error) which indicates that the mathemat ical P50 climatology 
+gives an opportunity to access seasonal rainfall totals in more dependable way than neural network 
+does, because it tends to over -smooth some extreme events.  
+8.2 Edge AI Deployment Metrics  
+Ensuring computational accessibility immediately on rural smallholder devices is kind of essential 
+for architecture of the system. Inference performance metric was gathered by torch.profiler in 
+standard CPU (which simulates an rural smartphone) and an CUDA  GPU using ONNX 
+optimization. The resulting hardware performance metrics —including inference latency, frames -
+per-second (FPS) throughput, and peak memory footprint —are summarized in Table V. 
+Table V: Edge Inference Profiling  
+Metric  CPU (Base Pipeline)  CUDA GPU (Optimized)  
+Inference Latency  240 ms/image  45 ms/image  
+Throughput  4.1 FPS  22.2 FPS  
+Memory Footprint (Peak)  ~185 MB (RAM)  ~310 MB (VRAM)  
+Cold Start Latency  1250 ms  2400 ms  
+Warm Start Latency  245 ms  48 ms  
+ 
+The integration of ONNX Runtime Optimization greatly lowered the CPU latency threshold to 
+
+--- PAGE 15 ---
+240msinside a 185 MB memory footprint meeting strict requirements for real -time edge 
+processing without needing active internet connection.  
+9. Conclusion  
+This paper introduced an Agri -Mantra, an end -to-end AI -driven agricultural decision support 
+platform that integrates five main intelligent modules into one system created especially for the 
+Indian smallholder farmers. The suggested architecture addresses c urrent limitations of agriculture 
+technology by reducing platform fragmentation, and overcoming language difficulties because it 
+incorporates a Bhashini -LLM conversational agent. Also the deployment of a custom 
+EfficientNetB3 architecture enhanced with Con volutional Block Attention and Coordinate 
+Attention modules was able to reach 99.67% classification accuracy among 48 disease classes. 
+Through using Grad -CAM strategic for visual explainability, the system gives transparent 
+diagnostic reasoning.  This directly resolves the major issue about end -user trust which exists with 
+black -box models.  
+Beyond disease identification, using a new six -layer TOPSIS -based hierarchical crop 
+recommendation pipeline showed a 34% improvement in projected market yields compared usual 
+baselines through simultaneous evaluation of biological constraints together with  the economic 
+viability. The engineering optimizations described in this study —including multi -source market 
+aggregation and ONNX -based model compression —have reduced edge inference latency 
+successfully to 240ms operating on standard CPUs. However, challen ges still remain for modeling 
+chaotic daily precipitation granularities; blended Conv -Transformer architecture is proving highly 
+effective when dealing with long -term agrometeorological forecasting tasks. Ultimately, Agri -
+Mantra builds an expandable system  and robust framework giving the opportunity to rural farmers 
+so they can access complete data intelligence necessary for navigating complexities found within 
+modern climate conditions as well as unpredictable market volatility.  
+10. References  
+[1] F. Piccialli, C. Della Bruna, D. Chiaro, P. Qi, M. Savoia. "AGRIFOLD: AGRIculture Federated 
+learning for Optimized Leaf disease Detection." Expert Systems with Applications , Vol. 289, 
+Article 128371, 2025. DOI: https://doi.org/10.1016/j.eswa.2025.128371  
+[2] B. Dey, J. Ferdous, R. Ahmed. "Machine learning based recommendation of agricultural and 
+horticultural crop farming in India under the regime of NPK, soil pH and three climatic variables." 
+Heliyon , Vol. 10, Issue 3, Article e25112, 2024. DOI: 
+https://doi.org/10.1016/j.heliyon.2024.e25112  
+[3] H. Afzal, M. Amjad, A. Raza, K. Munir, S.G. Villar, L.A.D. Lopez, I. Ashraf. "Incorporating 
+soil information with machine learning for crop recommendation to improve agricultural output." 
+Scientific Reports , Vol. 15, Article 8560, 2025. DOI: https://doi.org/10.1038/s41598 -025-88676 -
+z 
+
+--- PAGE 16 ---
+[4] S. Sathiyamurthi, M. Sivasakthi, S. Saravanan, R. Gobi, S.P. Kumar, S. Karuppannan. 
+"Assessment of crop suitability analysis using AHP -TOPSIS and geospatial techniques: A case 
+study of Krishnagiri District, India." Environmental and Sustainability Indicators , Vol. 24, Article 
+100466, 2024. DOI: https://doi.org/10.1016/j.indic.2024.100466  
+[5] S. Shastri, S. Kumar, V. Mansotra, R. Salgotra. "Advancing crop recommendation system with 
+supervised machine learning and explainable artificial intelligence." Scientific Reports , Vol. 15, 
+Article 25498, 2025. DOI: https://doi.org/10.1038/s41598 -025-07003 -8 
+[6] M.J. Karim, M.O.F. Goni, M. Nahiduzzaman, M. Ahsan, J. Haider, M. Kowalski. "Enhancing 
+agriculture through real -time grape leaf disease classification via an edge device with a lightweight 
+CNN architecture and Grad -CAM." Scientific Reports , Vol. 14, Article 16022, 2024. DOI: 
+https://doi.org/10.1038/s41598 -024-66989 -9 
+[7] A.Y. Ashurov, M.S.A.M. Al -Gaashani, N.A. Samee, R. Alkanhel, G. Atteia, H.A. Abdallah, 
+M.S.A. Muthanna. "Enhancing plant disease detection through deep learning: a Depthwise CNN 
+with squeeze and excitation integration and residual skip connections." Frontiers in Plant Science , 
+Vol. 15, Article 1505857, 2024. DOI: https://doi.org/10.3389/fpls.2024.1505857  
+[8] S. Duhan, P. Gulia, N.S. Gill, P.K. Shukla, S. Bhatia Khan, A. Almusharraf, N. Alkhaldi. 
+"Investigating attention mechanisms for plant disease identification in challenging environments." 
+Heliyon , Vol. 10, Issue 9, Article e29802, 2024. DOI: 
+https://doi.org/10.1016/j.heliyon.2024.e29802  
+[9] Y. Unal. "Integrating CBAM and Squeeze -and-Excitation Networks for Accurate Grapevine 
+Leaf Disease Diagnosis." Food Science & Nutrition , Vol. 13, Issue 6, Article e70377, 2025. DOI: 
+https://doi.org/10.1002/fsn3.70377  
+[10] U.V. Nnamdi, V. Abolghasemi. "Optimised MobileNet for very lightweight and accurate 
+plant leaf disease detection." Scientific Reports , Vol. 15, Article 43690, 2025. DOI: 
+https://doi.org/10.1038/s41598 -025-27393 -z 
+[11] S.M. Alhammad, D.S. Khafaga, W.M. El -hady, F.M. Samy, K.M. Hosny. "Deep learning and 
+explainable AI for classification of potato leaf diseases." Frontiers in Artificial Intelligence , Vol. 
+7, Article 1449329, 2024. DOI: https://doi.org/10.3389/frai.2024.1449329  
+[12] R. Sudhakar, K. Nithya, C.R. Dhivyaa, C. Sharmila. "High -performance parallel multi -scale 
+attention network with explainable AI for intelligent diagnosis of leaf diseases in agricultural 
+systems." Scientific Reports , Vol. 15, Article 42060, 2025. DOI: https://doi.org/10.1038/s41598 -
+025-26144 -4 
+[13] C. Pal, S. Karmakar, I. Mukherjee, P.P. Chakrabarti. "A lightweight and explainable CNN 
+model for empowering plant disease diagnosis." Scientific Reports , Vol. 15, Article 30720, 2025. 
+
+--- PAGE 17 ---
+DOI: https://doi.org/10.1038/s41598 -025-94083 -1 
+[14] G.H. Harish Nayak, Md. Wasi Alam, K.N. Singh, G. Avinash, R.R. Kumar, M. Ray, C.K. 
+Deb. "Exogenous variable driven deep learning models for improved price forecasting of TOP 
+crops in India." Scientific Reports , Vol. 14, Article 17203, 2024. DOI: 
+https://doi.org/10.1038/s41598 -024-68040 -3 
+[15] R.L. Manogna, V. Dharmaji, S. Sarang. "Enhancing agricultural commodity price forecasting 
+with deep learning." Scientific Reports , Vol. 15, Article 20903, 2025. DOI: 
+https://doi.org/10.1038/s41598 -025-05103 -z 
+[16] M. Jiang, B. Weng, J. Chen, T. Huang, F. Ye, L. You. "Transformer -enhanced spatiotemporal 
+neural network for post -processing of precipitation forecasts." Journal of Hydrology , Vol. 630, 
+Article 130720, 2024. DOI: https://doi.org/10.1016/j.jhydrol.2024.130720  
+[17] R. Wu, Y. Liang, L. Lin, Z. Zhang. "Spatiotemporal Multivariate Weather Prediction Network 
+Based on CNN -Transformer." Sensors , Vol. 24, Issue 23, Article 7837, 2024. DOI: 
+https://doi.org/10.3390/s24237837  
+[18] A. Ibrahim, K. Senthilkumar, K. Saito. "Evaluating responses by ChatGPT to farmers' 
+questions on irrigated lowland rice cultivation in Nigeria." Scientific Reports , Vol. 14, Article 
+3407, 2024. DOI: https://doi.org/10.1038/s41598 -024-53916 -1 
+[19] J. Kpodo, P. Kordjamshidi, A.P. Nejadhashemi. "AgXQA: A benchmark for advanced 
+Agricultural Extension question answering." Computers and Electronics in Agriculture , Vol. 225, 
+Article 109349, 2024. DOI: https://doi.org/10.1016/j.compag.2024.109349  
+[20] S. Bhagat, M. Kokare, V. Haswani, P. Hambarde, T. Taori, P.H. Ghante, D.K. Patil. 
+"Advancing real -time plant disease detection: A lightweight deep learning approach and novel 
+dataset for pigeon pea crop." Smart Agricultural Technology , Vol. 7, Article 100408, 2024. DOI: 
+https://doi.org/10.1016/j.atech.2024.100408  
+[21] B. Deforce, B. Baesens, J. Diels, E.S. Asensio. "Harnessing the power of transformers and 
+data fusion in smart irrigation." Applied Soft Computing , Vol. 152, Article 111246, 2024. DOI: 
+https://doi.org/10.1016/j.asoc.2024.111246  
+[22] R. Yan, P. An, X. Meng, Y. Li, D. Li, F. Xu, D. Dang. "A knowledge graph for crop diseases 
+and pests in China." Scientific Data , Vol. 12, Article 222, 2025. DOI: 
+https://doi.org/10.1038/s41597 -025-04492 -0 
+[23] H. Wang, R. Zhao. "Knowledge graph of agricultural engineering technology based on large 
+language model." Displays , Vol. 85, Article 102820, 2024. DOI: 
+https://doi.org/10.1016/j.displa.2024.102820  
+
+--- PAGE 18 ---
+[24] M.K. Senapaty, A. Ray, N. Padhy. "A Decision Support System for Crop Recommendation 
+Using Machine Learning Classification Algorithms." Agriculture (MDPI) , Vol. 14, Issue 8, Article 
+1256, 2024. DOI: https://doi.org/10.3390/agriculture14081256  
+[25] P. Rajkhowa, H. Baumüller. "Assessing the potential of ICT to increase land and labour 
+productivity in agriculture: Global and regional perspectives." Journal of Agricultural Economics , 
+Vol. 75, Issue 2, pp. 477 –503, 2024. DOI: https://doi.org/10.1111/1477 -9552.12566  
+ 
