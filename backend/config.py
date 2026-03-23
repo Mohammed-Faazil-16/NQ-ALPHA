@@ -17,10 +17,11 @@ class Settings:
     app_version: str = os.getenv("APP_VERSION", "1.0.0")
 
     ollama_base_url: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/api")
-    ollama_chat_model: str = os.getenv("OLLAMA_CHAT_MODEL", "llama3.1")
+    ollama_chat_model: str = os.getenv("OLLAMA_CHAT_MODEL", "llama3.2-vision:11b-instruct-q4_K_M")
     ollama_advisor_model: str = os.getenv("OLLAMA_ADVISOR_MODEL", "llama3.2-vision:11b-instruct-q4_K_M")
     ollama_embedding_model: str = os.getenv("OLLAMA_EMBEDDING_MODEL", "embeddinggemma")
     request_timeout_seconds: int = int(os.getenv("OLLAMA_REQUEST_TIMEOUT", "120"))
+    newsdata_api_key: str = os.getenv("NEWSDATA_API_KEY", "")
 
     postgres_host: str = os.getenv("POSTGRES_HOST", "localhost")
     postgres_port: int = int(os.getenv("POSTGRES_PORT", "5432"))

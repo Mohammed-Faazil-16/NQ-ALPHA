@@ -3,6 +3,7 @@ import {
   AUTH_EXPIRED_EVENT,
   getAdvisorStatus,
   getAlphaSeries,
+  getAssetNews,
   getFeatures,
   getFinancialPlan,
   getPortfolioAllocation,
@@ -67,6 +68,8 @@ export function PlatformProvider({ children }) {
     regimeId: 1,
     alphaSeries: [],
     alphaAsOf: "",
+    news: [],
+    newsQuery: "",
   });
   const [scannerState, setScannerState] = useState({
     loading: false,
@@ -266,10 +269,11 @@ export function PlatformProvider({ children }) {
       const symbol = recommendation.symbol;
       setSelectedAsset(symbol);
 
-      const [pricePayload, featurePayload, alphaPayload] = await Promise.all([
+      const [pricePayload, featurePayload, alphaPayload, newsPayload] = await Promise.all([
         getPrice(symbol),
         getFeatures(symbol),
         getAlphaSeries(symbol),
+        getAssetNews(symbol, 3).catch(() => ({ articles: [], query: symbol })),
       ]);
 
       setDashboardData({
@@ -283,6 +287,8 @@ export function PlatformProvider({ children }) {
         regimeId: featurePayload.regime_id ?? 1,
         alphaSeries: alphaPayload.series ?? [],
         alphaAsOf: alphaPayload.as_of ?? "",
+        news: newsPayload.articles ?? [],
+        newsQuery: newsPayload.query ?? symbol,
       });
       return symbol;
     } catch (error) {

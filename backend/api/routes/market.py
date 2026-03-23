@@ -3,6 +3,7 @@ from fastapi import APIRouter, HTTPException, Query
 from backend.services.asset_ingestion_service import search_assets
 from backend.services.fast_inference_service import alpha_series, infer_symbol
 from backend.services.live_data_service import fetch_asset_data
+from backend.services.news_service import get_asset_news
 from backend.services.precompute_service import get_latest_features_payload
 from backend.services.scanner_service import scan_assets
 from backend.services.symbol_resolver import resolve_symbol
@@ -86,5 +87,19 @@ def get_alpha_series(symbol: str = Query(..., min_length=1), lookback: int = Que
 def scan(top_n: int = Query(20, ge=5, le=20), asset_type: str | None = Query(None)):
     try:
         return scan_assets(top_n=top_n, asset_type=asset_type)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.get("/news")
+def news(symbol: str = Query(..., min_length=1), limit: int = Query(3, ge=1, le=3)):
+    try:
+        resolved_symbol = resolve_symbol(symbol)
+        matches = search_assets(symbol, limit=1)
+        asset_name = matches[0].get("name") if matches else resolved_symbol
+        asset_type = matches[0].get("asset_type") if matches else "stock"
+        return get_asset_news(resolved_symbol, asset_name=asset_name, asset_type=asset_type, limit=limit)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc

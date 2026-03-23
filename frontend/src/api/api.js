@@ -55,6 +55,7 @@ export const getPrice = (symbol) => unwrap(API.get("/price", { params: { symbol 
 export const getFeatures = (symbol) => unwrap(API.get("/features", { params: { symbol } }));
 export const getAlphaSeries = (symbol, lookback = 30) =>
   unwrap(API.get("/alpha_series", { params: { symbol, lookback } }));
+export const getAssetNews = (symbol, limit = 3) => unwrap(API.get("/news", { params: { symbol, limit } }));
 export const searchAssets = (q, limit = 8, assetType = "") =>
   unwrap(API.get("/assets/search", { params: { q, limit, asset_type: assetType || undefined } }));
 export const getScan = (params = {}) => unwrap(API.get("/scan", { params }));

@@ -13,7 +13,7 @@ Risk Level: Medium
 Reasoning: The local LLM is temporarily unavailable, so the advisor is preserving the existing system portfolio until live model reasoning resumes."""
 LLM_TIMEOUT_SECONDS = min(settings.request_timeout_seconds, 25)
 STATUS_TIMEOUT_SECONDS = 5
-ADVISOR_TIMEOUT_SECONDS = min(settings.request_timeout_seconds, 24)
+ADVISOR_TIMEOUT_SECONDS = min(settings.request_timeout_seconds, 30)
 DEFAULT_GENERATION_OPTIONS: dict[str, Any] = {
     "temperature": 0.2,
     "top_p": 0.9,
@@ -21,13 +21,13 @@ DEFAULT_GENERATION_OPTIONS: dict[str, Any] = {
 }
 ADVISOR_GENERATION_OPTIONS: dict[str, Any] = {
     **DEFAULT_GENERATION_OPTIONS,
-    "num_ctx": 6144,
-    "num_predict": 280,
+    "num_ctx": 8192,
+    "num_predict": 320,
 }
 FORECAST_GENERATION_OPTIONS: dict[str, Any] = {
     **DEFAULT_GENERATION_OPTIONS,
-    "num_ctx": 4096,
-    "num_predict": 180,
+    "num_ctx": 6144,
+    "num_predict": 220,
 }
 
 

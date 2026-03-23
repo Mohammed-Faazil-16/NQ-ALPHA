@@ -9,6 +9,8 @@ from backend.services.financial_plan_service import (
 from backend.services.forecast_service import build_asset_forecast, extract_forecast_horizon_years
 from backend.services.llm_service import generate_advisor_response_with_metadata
 from backend.services.memory_service import get_user_profile, retrieve_context
+from backend.services.news_service import get_asset_news
+from backend.services.opportunity_service import build_opportunity_snapshot, is_broad_opportunity_query
 from backend.services.portfolio_service import build_portfolio_from_strategy, get_user_portfolio
 from backend.services.runtime_cache import runtime_cache
 
@@ -16,6 +18,7 @@ from backend.services.runtime_cache import runtime_cache
 ADVISOR_CACHE_TTL_SECONDS = 300
 ADVISOR_TIMEOUT_SECONDS = 20
 FORECAST_LLM_TIMEOUT_SECONDS = 6
+OPPORTUNITY_LLM_TIMEOUT_SECONDS = 8
 MONEY_QUERY_HINTS = {
     "how much money",
     "how much do i have",
@@ -66,7 +69,7 @@ ASSET_FORECAST_QUERY_HINTS = {
 def _currency_symbol(currency: str) -> str:
     normalized = str(currency or "").strip().upper()
     if normalized == "INR":
-        return "₹"
+        return "Rs "
     if normalized == "USD":
         return "$"
     return normalized or "$"
@@ -165,7 +168,115 @@ def _risk_budget_fraction(risk_level: str) -> float:
     return 0.1
 
 
-def _asset_specific_summary(profile: dict[str, object], portfolio_data: dict[str, object], asset_context: dict[str, object]) -> str:
+def _summarize_news(news_payload: dict[str, object], max_items: int = 2) -> str:
+    articles = list(news_payload.get("articles") or [])[:max_items]
+    if not articles:
+        return "No fresh business headlines were available in the cached news layer."
+    snippets = []
+    for article in articles:
+        title = str(article.get("title") or "").strip()
+        source = str(article.get("source") or "news").strip()
+        if title:
+            snippets.append(f"- {title} ({source})")
+    return "\n".join(snippets) if snippets else "No fresh business headlines were available in the cached news layer."
+
+
+def _build_opportunity_prompt(
+    profile: dict[str, object],
+    portfolio_data: dict[str, object],
+    snapshot: dict[str, object],
+    user_query: str,
+) -> str:
+    candidate_lines = []
+    for item in snapshot.get("candidates") or []:
+        price_text = (
+            _format_price(float(item.get("latest_price") or 0.0), _asset_price_currency(str(item.get("symbol") or "")))
+            if item.get("latest_price") is not None
+            else "Unavailable"
+        )
+        candidate_lines.append(
+            f"- {item['asset_name']} ({item['symbol']}): rec={item['recommendation']}, alpha={float(item['alpha']):.4f}, confidence={float(item['confidence']) * 100:.0f}%, regime={item['regime']}, price={price_text}, news={_summarize_news({'articles': item.get('news') or []}, max_items=1).replace('- ', '', 1)}"
+        )
+
+    return f"""
+SYSTEM:
+You are NQ ALPHA's portfolio opportunity selector.
+- Choose from the provided shortlist only.
+- Do not invent symbols that are not in the list.
+- Favor higher-confidence, analyzer-aligned opportunities.
+- Explain why the best candidate fits the user's horizon and risk profile.
+- Use exactly these headings:
+Strategy:
+Risk Level:
+Allocation:
+Reasoning:
+
+FACTS:
+User risk level: {profile.get('risk_level')}
+User goals: {profile.get('goals')}
+User horizon: {profile.get('investment_horizon')}
+User capital: {_format_currency(float(portfolio_data.get('capital') or profile.get('capital') or 0.0), str(portfolio_data.get('currency') or 'INR'))}
+Available cash: {_format_currency(float(portfolio_data.get('available_cash_amount') or 0.0), str(portfolio_data.get('currency') or 'INR'))}
+Requested horizon: {float(snapshot.get('horizon_years') or 0.0):.1f} years
+Evaluated assets: {int(snapshot.get('evaluated') or 0)}
+Shortlist:
+{chr(10).join(candidate_lines) if candidate_lines else '- No candidates available'}
+
+USER QUESTION:
+{user_query}
+""".strip()
+
+
+def _deterministic_opportunity_response(
+    profile: dict[str, object],
+    portfolio_data: dict[str, object],
+    snapshot: dict[str, object],
+) -> str:
+    candidates = list(snapshot.get("candidates") or [])
+    risk_level = str(profile.get("risk_level") or "balanced")
+    currency = str(portfolio_data.get("currency") or "INR")
+    available_cash = float(portfolio_data.get("available_cash_amount") or 0.0)
+    capital = float(portfolio_data.get("capital") or profile.get("capital") or 0.0)
+    deploy_amount = min(available_cash, capital * _risk_budget_fraction(risk_level))
+
+    if not candidates:
+        return (
+            "Strategy: No stock currently clears a strong enough threshold to justify a confident new recommendation.\n"
+            f"Risk Level: {risk_level}\n"
+            "Allocation: Keep cash flexible and wait for a cleaner BUY signal from the scanner.\n"
+            "Reasoning: The opportunity engine did not find a sufficiently strong shortlist from the latest analyzer sweep, so preserving optionality is better than forcing a weak idea."
+        )
+
+    best = candidates[0]
+    watchlist = ", ".join(f"{item['symbol']} ({item['recommendation']})" for item in candidates[1:3]) or "No secondary candidates"
+    price_text = (
+        _format_price(float(best.get("latest_price") or 0.0), _asset_price_currency(str(best.get("symbol") or "")))
+        if best.get("latest_price") is not None
+        else "latest price unavailable"
+    )
+    news_line = _summarize_news({"articles": best.get("news") or []}, max_items=1).replace("- ", "", 1)
+
+    if str(best.get("recommendation") or "HOLD").upper() == "BUY" and deploy_amount > 0.0:
+        allocation = f"The cleanest staged size is about {_format_currency(deploy_amount, currency)} into {best['symbol']}, while leaving the rest in reserve until the signal refreshes."
+    elif str(best.get("recommendation") or "HOLD").upper() == "BUY":
+        allocation = f"{best['symbol']} is the strongest current idea, but you do not have free cash, so any move would need a rebalance from weaker holdings."
+    else:
+        allocation = f"There is no high-conviction BUY today. Treat {best['symbol']} as the strongest watchlist candidate rather than forcing an immediate allocation."
+
+    return (
+        f"Strategy: The strongest current candidate for your horizon appears to be {best['asset_name']} ({best['symbol']}) at {price_text}, with a {best['recommendation']} signal, alpha {float(best['alpha']):.4f}, and {float(best['confidence']) * 100:.0f}% confidence in a {best['regime']} regime.\n"
+        f"Risk Level: {risk_level}\n"
+        f"Allocation: {allocation}\n"
+        f"Reasoning: This shortlist came from the shared analyzer sweep across {int(snapshot.get('evaluated') or 0)} assets, so the advisor is not inventing a random name. Latest headline context for {best['symbol']}: {news_line}. Secondary names to monitor: {watchlist}."
+    )
+
+
+def _asset_specific_summary(
+    profile: dict[str, object],
+    portfolio_data: dict[str, object],
+    asset_context: dict[str, object],
+    news_payload: dict[str, object],
+) -> str:
     symbol = str(asset_context.get("symbol") or "").upper()
     asset_name = str(asset_context.get("asset_name") or symbol)
     recommendation = str(asset_context.get("recommendation") or "HOLD").upper()
@@ -182,6 +293,7 @@ def _asset_specific_summary(profile: dict[str, object], portfolio_data: dict[str
     matched_query = str(asset_context.get("matched_query") or "")
     is_price_query = _is_asset_price_query(matched_query)
     position = _find_portfolio_position(portfolio_data, symbol)
+    news_line = _summarize_news(news_payload, max_items=1).replace("- ", "", 1)
 
     if position:
         current_position_text = (
@@ -229,7 +341,8 @@ def _asset_specific_summary(profile: dict[str, object], portfolio_data: dict[str
 
     reasoning = (
         f"This answer is locked to the same analyzer that powers the dashboard, so the advisor cannot contradict the live recommendation. "
-        f"Current alpha is {alpha:.4f}, regime is {regime}, and confidence is {confidence * 100:.0f}%.{latest_price_text}"
+        f"Current alpha is {alpha:.4f}, regime is {regime}, and confidence is {confidence * 100:.0f}%.{latest_price_text} "
+        f"Latest cached headline context: {news_line}"
     )
 
     return (
@@ -246,12 +359,14 @@ def _build_forecast_prompt(
     asset_context: dict[str, object],
     forecast: dict[str, float | str],
     user_query: str,
+    news_payload: dict[str, object],
 ) -> str:
     symbol = str(asset_context.get("symbol") or "").upper()
     asset_name = str(asset_context.get("asset_name") or symbol)
     recommendation = str(asset_context.get("recommendation") or "HOLD").upper()
     price_currency = _asset_price_currency(symbol)
     position = _find_portfolio_position(portfolio_data, symbol)
+    news_line = _summarize_news(news_payload, max_items=1).replace("- ", "", 1)
     position_text = (
         f"Current saved position: {float(position.get('percent') or 0.0):.2f}% of capital"
         if position
@@ -292,6 +407,8 @@ User risk level: {profile.get('risk_level')}
 User capital: {_format_currency(float(portfolio_data.get('capital') or profile.get('capital') or 0.0), str(portfolio_data.get('currency') or 'INR'))}
 Available cash: {_format_currency(float(portfolio_data.get('available_cash_amount') or 0.0), str(portfolio_data.get('currency') or 'INR'))}
 {position_text}
+Latest news context:
+{news_line}
 
 USER QUESTION:
 {user_query}
@@ -303,6 +420,7 @@ def _deterministic_forecast_response(
     portfolio_data: dict[str, object],
     asset_context: dict[str, object],
     forecast: dict[str, float | str],
+    news_payload: dict[str, object],
 ) -> str:
     symbol = str(asset_context.get("symbol") or "").upper()
     asset_name = str(asset_context.get("asset_name") or symbol)
@@ -325,9 +443,10 @@ def _deterministic_forecast_response(
     else:
         take = "The model is neutral, so the forecast is more useful as a watchlist range than as an immediate buy signal."
 
+    news_line = _summarize_news(news_payload, max_items=1).replace("- ", "", 1)
     reasoning = (
-        f"This 3-year view starts from the latest tracked close, then blends trailing return behavior, annualized volatility, current alpha, regime, and confidence into a bounded scenario range. "
-        f"That keeps the answer grounded in the same engine that powers the analyzer instead of asking the LLM to invent a target."
+        f"This {float(forecast['years']):.1f}-year view starts from the latest tracked close, then blends trailing return behavior, annualized volatility, current alpha, regime, confidence, and the latest headline context into a bounded scenario range. "
+        f"That keeps the answer grounded in the same engine that powers the analyzer instead of asking the LLM to invent a target. Latest cached headline context: {news_line}"
     )
 
     return (
@@ -364,6 +483,30 @@ def generate_financial_advice(user_id: str, user_query: str) -> dict[str, object
             runtime_cache.set(cache_key, payload, ttl_seconds=60)
             return payload
 
+        if is_broad_opportunity_query(user_query):
+            snapshot = build_opportunity_snapshot(user_query, profile)
+            deterministic_text = _deterministic_opportunity_response(profile, portfolio_data, snapshot)
+            prompt = _build_opportunity_prompt(profile, portfolio_data, snapshot, user_query)
+            result = generate_advisor_response_with_metadata(prompt, timeout_seconds=OPPORTUNITY_LLM_TIMEOUT_SECONDS)
+            if str(result.get("source") or "") == "ollama":
+                payload = {
+                    "text": str(result.get("text") or deterministic_text),
+                    "source": "ollama-opportunity",
+                    "model": result.get("model"),
+                    "latency_seconds": result.get("latency_seconds", 0.0),
+                    "plan": latest_plan,
+                }
+            else:
+                payload = {
+                    "text": deterministic_text,
+                    "source": "opportunity-engine",
+                    "model": None,
+                    "latency_seconds": result.get("latency_seconds", 0.0),
+                    "plan": latest_plan,
+                }
+            runtime_cache.set(cache_key, payload, ttl_seconds=120)
+            return payload
+
         try:
             asset_context = extract_asset_intelligence(user_query)
         except Exception:
@@ -378,8 +521,14 @@ def generate_financial_advice(user_id: str, user_query: str) -> dict[str, object
                     regime=str(asset_context.get("regime") or "normal"),
                     confidence=float(asset_context.get("confidence") or 0.0),
                 )
-                deterministic_text = _deterministic_forecast_response(profile, portfolio_data, asset_context, forecast)
-                prompt = _build_forecast_prompt(profile, portfolio_data, asset_context, forecast, user_query)
+                news_payload = get_asset_news(
+                    str(asset_context.get("symbol") or ""),
+                    asset_name=str(asset_context.get("asset_name") or ""),
+                    asset_type=str(asset_context.get("asset_type") or "stock"),
+                    limit=2,
+                )
+                deterministic_text = _deterministic_forecast_response(profile, portfolio_data, asset_context, forecast, news_payload)
+                prompt = _build_forecast_prompt(profile, portfolio_data, asset_context, forecast, user_query, news_payload)
                 result = generate_advisor_response_with_metadata(
                     prompt,
                     timeout_seconds=FORECAST_LLM_TIMEOUT_SECONDS,
@@ -397,7 +546,7 @@ def generate_financial_advice(user_id: str, user_query: str) -> dict[str, object
                     payload = {
                         "text": deterministic_text,
                         "source": "forecast-engine",
-                        "model": result.get("model"),
+                        "model": None,
                         "latency_seconds": result.get("latency_seconds", 0.0),
                         "plan": latest_plan,
                     }
@@ -407,8 +556,14 @@ def generate_financial_advice(user_id: str, user_query: str) -> dict[str, object
                 pass
 
         if asset_context is not None:
+            news_payload = get_asset_news(
+                str(asset_context.get("symbol") or ""),
+                asset_name=str(asset_context.get("asset_name") or ""),
+                asset_type=str(asset_context.get("asset_type") or "stock"),
+                limit=2,
+            )
             payload = {
-                "text": _asset_specific_summary(profile, portfolio_data, asset_context),
+                "text": _asset_specific_summary(profile, portfolio_data, asset_context, news_payload),
                 "source": "shared-analyzer",
                 "model": None,
                 "latency_seconds": 0.0,

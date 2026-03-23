@@ -323,6 +323,37 @@ export default function Dashboard() {
         </Panel>
       </section>
 
+      <section className="grid gap-6 xl:grid-cols-[1fr_1fr]">
+        <Panel title="Latest News Context" eyebrow="Fresh headline layer for this asset">
+          {dashboardData.news?.length ? (
+            <div className="space-y-3">
+              {dashboardData.news.map((item, index) => (
+                <div key={`${item.link || item.title}-${index}`} className="rounded-[1.3rem] border border-white/8 bg-white/5 px-4 py-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="font-semibold text-white">{item.title}</p>
+                    <span className="text-[0.65rem] uppercase tracking-[0.22em] text-frost/70">{item.source || 'news'}</span>
+                  </div>
+                  <p className="mt-2 text-sm leading-6 text-mist/72">{item.summary || 'Headline captured from the cached news feed for decision support.'}</p>
+                  <p className="mt-3 text-[0.68rem] uppercase tracking-[0.22em] text-mist/50">Query: {dashboardData.newsQuery || selectedAsset}</p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-[1.3rem] border border-white/8 bg-white/5 px-4 py-4 text-sm leading-6 text-mist/72">
+              No fresh cached headlines are available for this asset yet, so the recommendation is running on price, features, alpha, confidence, and regime alone.
+            </div>
+          )}
+        </Panel>
+
+        <Panel title="Model Integrity" eyebrow="Why this answer is more grounded">
+          <div className="space-y-3">
+            <InsightRow label="Analyzer consistency" value="Dashboard analysis and advisor answers now share the same symbol resolution, analyzer verdict, regime, and confidence path." />
+            <InsightRow label="News usage" value="Latest headlines are cached and reused selectively so the system can enrich reasoning without burning through the NewsData.io free tier." />
+            <InsightRow label="Current runtime" value={dashboardData.recommendation ? `Analyzer signal for ${dashboardData.recommendation.symbol}: ${dashboardData.recommendation.recommendation} with ${Math.round((dashboardData.recommendation.confidence || 0) * 100)}% confidence.` : 'Run an asset analysis to load the current signal.'} />
+          </div>
+        </Panel>
+      </section>
+
       <Panel title="Alpha Timeline" eyebrow="Recent conviction and regime shifts">
         <p className="mb-4 text-xs uppercase tracking-[0.22em] text-mist/48">Alpha series is generated from the latest completed feature snapshot. Current as of {dashboardData.alphaAsOf || dashboardData.priceAsOf || "latest completed bar"}.</p>
         <div className="h-[260px] w-full">
