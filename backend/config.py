@@ -18,6 +18,7 @@ class Settings:
 
     ollama_base_url: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/api")
     ollama_chat_model: str = os.getenv("OLLAMA_CHAT_MODEL", "llama3.1")
+    ollama_advisor_model: str = os.getenv("OLLAMA_ADVISOR_MODEL", "llama3.2-vision:11b-instruct-q4_K_M")
     ollama_embedding_model: str = os.getenv("OLLAMA_EMBEDDING_MODEL", "embeddinggemma")
     request_timeout_seconds: int = int(os.getenv("OLLAMA_REQUEST_TIMEOUT", "120"))
 

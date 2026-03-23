@@ -6,7 +6,8 @@ from backend.services.financial_plan_service import (
     plan_to_response_text,
     save_financial_plan,
 )
-from backend.services.llm_service import generate_response_with_metadata
+from backend.services.forecast_service import build_asset_forecast, extract_forecast_horizon_years
+from backend.services.llm_service import generate_advisor_response_with_metadata
 from backend.services.memory_service import get_user_profile, retrieve_context
 from backend.services.portfolio_service import build_portfolio_from_strategy, get_user_portfolio
 from backend.services.runtime_cache import runtime_cache
@@ -14,6 +15,7 @@ from backend.services.runtime_cache import runtime_cache
 
 ADVISOR_CACHE_TTL_SECONDS = 300
 ADVISOR_TIMEOUT_SECONDS = 20
+FORECAST_LLM_TIMEOUT_SECONDS = 6
 MONEY_QUERY_HINTS = {
     "how much money",
     "how much do i have",
@@ -35,11 +37,54 @@ MONEY_QUERY_HINTS = {
     "to invest",
     "portfolio value",
 }
+ASSET_PRICE_QUERY_HINTS = {
+    "current stock price",
+    "current price",
+    "price",
+    "quote",
+    "trading at",
+    "stock price",
+}
+ASSET_FORECAST_QUERY_HINTS = {
+    "predict",
+    "predicted",
+    "forecast",
+    "future price",
+    "price in",
+    "price after",
+    "3 year",
+    "3 years",
+    "2 year",
+    "2 years",
+    "5 year",
+    "5 years",
+    "target price",
+    "what will",
+}
+
+
+def _currency_symbol(currency: str) -> str:
+    normalized = str(currency or "").strip().upper()
+    if normalized == "INR":
+        return "₹"
+    if normalized == "USD":
+        return "$"
+    return normalized or "$"
 
 
 def _format_currency(value: float, currency: str) -> str:
-    symbol = "?" if currency.upper() == "INR" else currency.upper()
-    return f"{symbol}{value:,.0f}"
+    return f"{_currency_symbol(currency)}{value:,.0f}"
+
+
+def _format_price(value: float, currency: str) -> str:
+    return f"{_currency_symbol(currency)}{value:,.2f}"
+
+
+def _asset_price_currency(symbol: str) -> str:
+    normalized = str(symbol or "").upper()
+    if normalized.endswith(".NS") or normalized.endswith(".BO"):
+        return "INR"
+    return "USD"
 
 
 def _portfolio_money_summary(profile: dict[str, object], portfolio_data: dict[str, object]) -> str:
@@ -94,6 +139,16 @@ def _is_money_query(user_query: str) -> bool:
     return any(hint in normalized for hint in MONEY_QUERY_HINTS)
 
 
+def _is_asset_price_query(user_query: str) -> bool:
+    normalized = str(user_query or "").strip().lower()
+    return any(hint in normalized for hint in ASSET_PRICE_QUERY_HINTS)
+
+
+def _is_asset_forecast_query(user_query: str) -> bool:
+    normalized = str(user_query or "").strip().lower()
+    return any(hint in normalized for hint in ASSET_FORECAST_QUERY_HINTS)
+
+
 def _find_portfolio_position(portfolio_data: dict[str, object], symbol: str) -> dict[str, object] | None:
     for item in portfolio_data.get("allocations") or []:
         if str(item.get("symbol") or "").upper() == symbol.upper():
@@ -119,8 +174,13 @@ def _asset_specific_summary(profile: dict[str, object], portfolio_data: dict[str
     confidence = float(asset_context.get("confidence") or 0.0)
     risk_level = str(profile.get("risk_level") or "balanced")
     currency = str(portfolio_data.get("currency") or "INR")
+    price_currency = _asset_price_currency(symbol)
     capital = float(portfolio_data.get("capital") or profile.get("capital") or 0.0)
     available_cash = float(portfolio_data.get("available_cash_amount") or 0.0)
+    latest_price = asset_context.get("latest_price")
+    latest_timestamp = str(asset_context.get("latest_timestamp") or "")
+    matched_query = str(asset_context.get("matched_query") or "")
+    is_price_query = _is_asset_price_query(matched_query)
     position = _find_portfolio_position(portfolio_data, symbol)
 
     if position:
@@ -130,6 +190,10 @@ def _asset_specific_summary(profile: dict[str, object], portfolio_data: dict[str
         )
     else:
         current_position_text = f"You do not currently have a saved position in {symbol}."
+
+    latest_price_text = ""
+    if latest_price is not None:
+        latest_price_text = f" Latest observed close was {_format_price(float(latest_price), price_currency)} on {latest_timestamp}."
 
     if recommendation == "BUY":
         target_amount = min(available_cash, capital * _risk_budget_fraction(risk_level) * max(confidence, 0.5))
@@ -157,15 +221,120 @@ def _asset_specific_summary(profile: dict[str, object], portfolio_data: dict[str
         )
         strategy = f"Keep {symbol} as a monitored candidate and wait for a stronger analyzer signal before adding new money."
 
+    if is_price_query and latest_price is not None:
+        strategy = (
+            f"{asset_name} ({symbol}) is currently trading around {_format_price(float(latest_price), price_currency)} based on the latest tracked close from {latest_timestamp}, "
+            f"and the shared analyzer stance is {recommendation}."
+        )
+
     reasoning = (
         f"This answer is locked to the same analyzer that powers the dashboard, so the advisor cannot contradict the live recommendation. "
-        f"Current alpha is {alpha:.4f}, regime is {regime}, and confidence is {confidence * 100:.0f}%."
+        f"Current alpha is {alpha:.4f}, regime is {regime}, and confidence is {confidence * 100:.0f}%.{latest_price_text}"
     )
 
     return (
         f"Strategy: {strategy}\n"
         f"Risk Level: {risk_level}\n"
         f"Allocation: {allocation}\n"
+        f"Reasoning: {reasoning}"
+    )
+
+
+def _build_forecast_prompt(
+    profile: dict[str, object],
+    portfolio_data: dict[str, object],
+    asset_context: dict[str, object],
+    forecast: dict[str, float | str],
+    user_query: str,
+) -> str:
+    symbol = str(asset_context.get("symbol") or "").upper()
+    asset_name = str(asset_context.get("asset_name") or symbol)
+    recommendation = str(asset_context.get("recommendation") or "HOLD").upper()
+    price_currency = _asset_price_currency(symbol)
+    position = _find_portfolio_position(portfolio_data, symbol)
+    position_text = (
+        f"Current saved position: {float(position.get('percent') or 0.0):.2f}% of capital"
+        if position
+        else "Current saved position: none"
+    )
+
+    return f"""
+SYSTEM:
+You are NQ ALPHA's forecast explainer.
+- Use only the facts provided below.
+- Do not invent hidden catalysts or fake certainty.
+- Give a scenario-based answer, not a guaranteed target.
+- Keep the tone practical and investor-friendly.
+- Use exactly these headings:
+Current Price:
+3-Year Base Case:
+3-Year Range:
+Take:
+Reasoning:
+
+FACTS:
+Asset: {asset_name}
+Symbol: {symbol}
+Current price: {_format_price(float(forecast['current_price']), price_currency)}
+Price as of: {forecast['current_timestamp']}
+Analyzer recommendation: {recommendation}
+Alpha score: {float(asset_context.get('alpha') or 0.0):.4f}
+Confidence: {float(asset_context.get('confidence') or 0.0) * 100:.0f}%
+Regime: {asset_context.get('regime')}
+Trailing annualized return: {float(forecast['trailing_cagr']) * 100:.2f}%
+Annualized volatility: {float(forecast['annualized_volatility']) * 100:.2f}%
+Adjusted annual return used in forecast: {float(forecast['adjusted_annual_return']) * 100:.2f}%
+Forecast horizon: {float(forecast['years']):.1f} years
+Base-case projected price: {_format_price(float(forecast['base_price']), price_currency)}
+Downside projected price: {_format_price(float(forecast['downside_price']), price_currency)}
+Upside projected price: {_format_price(float(forecast['upside_price']), price_currency)}
+User risk level: {profile.get('risk_level')}
+User capital: {_format_currency(float(portfolio_data.get('capital') or profile.get('capital') or 0.0), str(portfolio_data.get('currency') or 'INR'))}
+Available cash: {_format_currency(float(portfolio_data.get('available_cash_amount') or 0.0), str(portfolio_data.get('currency') or 'INR'))}
+{position_text}
+
+USER QUESTION:
+{user_query}
+""".strip()
+
+
+def _deterministic_forecast_response(
+    profile: dict[str, object],
+    portfolio_data: dict[str, object],
+    asset_context: dict[str, object],
+    forecast: dict[str, float | str],
+) -> str:
+    symbol = str(asset_context.get("symbol") or "").upper()
+    asset_name = str(asset_context.get("asset_name") or symbol)
+    recommendation = str(asset_context.get("recommendation") or "HOLD").upper()
+    regime = str(asset_context.get("regime") or "normal")
+    confidence = float(asset_context.get("confidence") or 0.0)
+    risk_level = str(profile.get("risk_level") or "balanced")
+    currency = str(portfolio_data.get("currency") or "INR")
+    price_currency = _asset_price_currency(symbol)
+    available_cash = float(portfolio_data.get("available_cash_amount") or 0.0)
+    target_fraction = _risk_budget_fraction(risk_level)
+    staged_amount = min(available_cash, float(portfolio_data.get("capital") or profile.get("capital") or 0.0) * target_fraction)
+
+    if recommendation == "BUY" and staged_amount > 0.0:
+        take = f"The signal is constructive, so a staged entry of about {_format_currency(staged_amount, currency)} is reasonable instead of a full-size allocation."
+    elif recommendation == "BUY":
+        take = "The signal is constructive, but you do not have free cash right now, so any move would need a rebalance from weaker holdings."
+    elif recommendation == "AVOID":
+        take = "The model still flags this as an avoid, so the forecast should be treated as a scenario map rather than a buy trigger."
+    else:
+        take = "The model is neutral, so the forecast is more useful as a watchlist range than as an immediate buy signal."
+
+    reasoning = (
+        f"This 3-year view starts from the latest tracked close, then blends trailing return behavior, annualized volatility, current alpha, regime, and confidence into a bounded scenario range. "
+        f"That keeps the answer grounded in the same engine that powers the analyzer instead of asking the LLM to invent a target."
+    )
+
+    return (
+        f"Current Price: {asset_name} ({symbol}) is currently around {_format_price(float(forecast['current_price']), price_currency)} as of {forecast['current_timestamp']}.\n"
+        f"3-Year Base Case: If the current return profile, analyzer signal, and {regime} regime stay broadly similar, the base-case path lands near {_format_price(float(forecast['base_price']), price_currency)} in about {float(forecast['years']):.1f} years.\n"
+        f"3-Year Range: A practical downside-to-upside range is {_format_price(float(forecast['downside_price']), price_currency)} to {_format_price(float(forecast['upside_price']), price_currency)}.\n"
+        f"Take: {take} Current analyzer stance is {recommendation} with {confidence * 100:.0f}% confidence and user risk level is {risk_level}.\n"
         f"Reasoning: {reasoning}"
     )
 
@@ -199,6 +368,43 @@ def generate_financial_advice(user_id: str, user_query: str) -> dict[str, object
             asset_context = extract_asset_intelligence(user_query)
         except Exception:
             asset_context = None
+
+        if asset_context is not None and _is_asset_forecast_query(user_query):
+            try:
+                forecast = build_asset_forecast(
+                    symbol=str(asset_context.get("symbol") or ""),
+                    years=extract_forecast_horizon_years(user_query),
+                    alpha=float(asset_context.get("alpha") or 0.0),
+                    regime=str(asset_context.get("regime") or "normal"),
+                    confidence=float(asset_context.get("confidence") or 0.0),
+                )
+                deterministic_text = _deterministic_forecast_response(profile, portfolio_data, asset_context, forecast)
+                prompt = _build_forecast_prompt(profile, portfolio_data, asset_context, forecast, user_query)
+                result = generate_advisor_response_with_metadata(
+                    prompt,
+                    timeout_seconds=FORECAST_LLM_TIMEOUT_SECONDS,
+                    forecast_mode=True,
+                )
+                if str(result.get("source") or "") == "ollama":
+                    payload = {
+                        "text": str(result.get("text") or deterministic_text),
+                        "source": "ollama-forecast",
+                        "model": result.get("model"),
+                        "latency_seconds": result.get("latency_seconds", 0.0),
+                        "plan": latest_plan,
+                    }
+                else:
+                    payload = {
+                        "text": deterministic_text,
+                        "source": "forecast-engine",
+                        "model": result.get("model"),
+                        "latency_seconds": result.get("latency_seconds", 0.0),
+                        "plan": latest_plan,
+                    }
+                runtime_cache.set(cache_key, payload, ttl_seconds=120)
+                return payload
+            except Exception:
+                pass
 
         if asset_context is not None:
             payload = {
@@ -256,9 +462,9 @@ Reasoning:
 """.strip()
 
         executor = ThreadPoolExecutor(max_workers=1)
-        future = executor.submit(generate_response_with_metadata, prompt)
+        future = executor.submit(generate_advisor_response_with_metadata, prompt, ADVISOR_TIMEOUT_SECONDS)
         try:
-            result = future.result(timeout=ADVISOR_TIMEOUT_SECONDS)
+            result = future.result(timeout=ADVISOR_TIMEOUT_SECONDS + 2)
         except FutureTimeoutError:
             future.cancel()
             executor.shutdown(wait=False, cancel_futures=True)

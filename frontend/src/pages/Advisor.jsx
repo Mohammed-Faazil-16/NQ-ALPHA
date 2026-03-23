@@ -70,7 +70,7 @@ export default function Advisor() {
 
   const latestStructured = useMemo(() => parseStructuredResponse(advisorState.response), [advisorState.response]);
   const currentPlan = financialPlanState.data;
-  const liveModelConnected = Boolean(advisorState.status?.connected && advisorState.status?.using_live_model);
+  const liveModelConnected = Boolean(advisorState.status?.connected && advisorState.status?.using_live_advisor_model);
 
   return (
     <main className="space-y-6">
@@ -100,14 +100,14 @@ export default function Advisor() {
         <StatusCard
           label="Runtime"
           value={liveModelConnected ? "Live Ollama" : "Fallback mode"}
-          detail={advisorState.status?.configured_model || "unknown"}
+          detail={advisorState.status?.preferred_advisor_model || advisorState.status?.configured_advisor_model || advisorState.status?.configured_model || "unknown"}
           tone={liveModelConnected ? "text-pulse" : "text-ember"}
         />
         <StatusCard
           label="Latest source"
           value={advisorState.source || "No request yet"}
           detail={advisorState.model || "No model metadata yet"}
-          tone={advisorState.source === "ollama" ? "text-pulse" : "text-frost"}
+          tone={String(advisorState.source || "").startsWith("ollama") ? "text-pulse" : "text-frost"}
         />
         <StatusCard
           label="Latency"
@@ -158,7 +158,7 @@ export default function Advisor() {
             {advisorState.error ? <p className="rounded-2xl bg-ember/15 px-4 py-3 text-sm text-ember">{advisorState.error}</p> : null}
             {!liveModelConnected ? (
               <p className="rounded-2xl border border-ember/25 bg-ember/10 px-4 py-3 text-sm text-ember">
-                Ollama is not reporting a live ready state right now. The system will fall back to the last saved financial plan instead of inventing advice.
+                The preferred advisor model is not reporting a live ready state right now. The system will fall back to the last saved financial plan instead of inventing advice.
               </p>
             ) : null}
           </form>
@@ -176,7 +176,7 @@ export default function Advisor() {
                   <div className="flex flex-wrap items-center gap-3">
                     <p className="text-[0.65rem] uppercase tracking-[0.22em] text-mist/55">{entry.role === "user" ? "You" : "Advisor"}</p>
                     {entry.role === "assistant" && entry.source ? (
-                      <span className={`rounded-full px-2.5 py-1 text-[0.62rem] font-semibold uppercase tracking-[0.16em] ${entry.source === "ollama" ? "bg-pulse/15 text-pulse" : "bg-ember/15 text-ember"}`}>
+                      <span className={`rounded-full px-2.5 py-1 text-[0.62rem] font-semibold uppercase tracking-[0.16em] ${String(entry.source || "").startsWith("ollama") ? "bg-pulse/15 text-pulse" : "bg-ember/15 text-ember"}`}>
                         {entry.source}
                       </span>
                     ) : null}

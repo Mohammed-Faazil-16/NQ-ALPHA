@@ -14,6 +14,8 @@ from backend.services.runtime_cache import runtime_cache
 
 
 STATIC_SYMBOL_MAP = {
+    "accenture": "ACN",
+    "acn": "ACN",
     "apple": "AAPL",
     "aapl": "AAPL",
     "microsoft": "MSFT",
@@ -92,6 +94,52 @@ NSE_HINTS = {
 CRYPTO_HINTS = {"BTC", "ETH", "SOL", "BNB", "XRP", "DOGE", "ADA"}
 SEARCH_CACHE_TTL_SECONDS = 3600
 DIRECT_PROBE_TIMEOUT_SECONDS = 4
+ASSET_QUERY_STOPWORDS = {
+    "a",
+    "an",
+    "advice",
+    "analyze",
+    "analyse",
+    "asset",
+    "buy",
+    "check",
+    "current",
+    "do",
+    "for",
+    "give",
+    "hold",
+    "how",
+    "i",
+    "in",
+    "invest",
+    "is",
+    "it",
+    "look",
+    "me",
+    "of",
+    "on",
+    "price",
+    "query",
+    "quote",
+    "share",
+    "should",
+    "stock",
+    "take",
+    "tell",
+    "the",
+    "this",
+    "to",
+    "today",
+    "view",
+    "what",
+}
+ASSET_QUERY_PATTERNS = (
+    r"(?:stock|share|price|quote)\s+of\s+(.+)$",
+    r"(?:take|view|opinion|thoughts|outlook)\s+on\s+(.+)$",
+    r"(?:analyze|analyse|review|check)\s+(.+)$",
+    r"(?:buy|invest\s+in|avoid|hold)\s+(.+)$",
+    r"(?:about)\s+(.+)$",
+)
 
 
 def _normalize_query(query: str) -> str:
@@ -101,6 +149,13 @@ def _normalize_query(query: str) -> str:
 
 def _compact_symbol(query: str) -> str:
     return query.replace(" ", "").upper().lstrip("$")
+
+
+def _looks_like_market_symbol(value: str) -> bool:
+    compact = _compact_symbol(value)
+    if not compact or len(compact) > 18:
+        return False
+    return bool(re.fullmatch(r"[A-Z0-9]{1,12}([.=/-][A-Z0-9]{1,6})?", compact))
 
 
 def _infer_asset_type(symbol: str) -> str:
@@ -145,6 +200,40 @@ def _log_resolution(query: str, symbol: str, source: str) -> None:
     print(f"Input query: {query}")
     print(f"Resolved symbol: {symbol}")
     print(f"Source: {source}")
+
+
+def extract_asset_candidates(query: str) -> list[str]:
+    normalized_query = _normalize_query(query)
+    if not normalized_query:
+        return []
+
+    candidates: list[str] = []
+    seen: set[str] = set()
+
+    def add_candidate(value: str) -> None:
+        normalized = _normalize_query(value)
+        if not normalized or normalized in seen:
+            return
+        seen.add(normalized)
+        candidates.append(normalized)
+
+    add_candidate(normalized_query)
+
+    for pattern in ASSET_QUERY_PATTERNS:
+        match = re.search(pattern, normalized_query)
+        if match:
+            add_candidate(match.group(1))
+
+    tokens = [token for token in normalized_query.split() if token not in ASSET_QUERY_STOPWORDS]
+    if tokens:
+        filtered_phrase = " ".join(tokens)
+        add_candidate(filtered_phrase)
+        max_ngram = min(4, len(tokens))
+        for width in range(max_ngram, 0, -1):
+            for idx in range(0, len(tokens) - width + 1):
+                add_candidate(" ".join(tokens[idx : idx + width]))
+
+    return candidates
 
 
 @lru_cache(maxsize=1)
@@ -255,7 +344,9 @@ def _score_quote(normalized_query: str, quote: dict, variant: str) -> int:
         score += 22
     if "nse" in exchange or "bse" in exchange or "india" in exchange:
         score += 25
-    if any(hint in normalized_query for hint in NSE_HINTS) and (symbol.endswith(".NS") or symbol.endswith(".BO") or "india" in exchange or "nse" in exchange or "bse" in exchange):
+    if any(hint in normalized_query for hint in NSE_HINTS) and (
+        symbol.endswith(".NS") or symbol.endswith(".BO") or "india" in exchange or "nse" in exchange or "bse" in exchange
+    ):
         score += 40
     if variant.endswith(" nse") or variant.endswith(" india"):
         if symbol.endswith(".NS") or symbol.endswith(".BO"):
@@ -385,49 +476,55 @@ def _resolve_from_direct_probe(normalized_query: str) -> tuple[str | None, str |
 
 
 def resolve_symbol(query: str) -> str:
-    normalized_query = _normalize_query(query)
-    if not normalized_query:
+    candidate_queries = extract_asset_candidates(query)
+    if not candidate_queries:
         raise ValueError("Query must not be empty")
 
-    if normalized_query in STATIC_SYMBOL_MAP:
-        symbol = STATIC_SYMBOL_MAP[normalized_query]
-        _persist_all_asset(symbol, name=normalized_query.title(), asset_type=_infer_asset_type(symbol))
-        _log_resolution(query, symbol, "static")
-        return symbol
+    for normalized_query in candidate_queries:
+        if normalized_query in STATIC_SYMBOL_MAP:
+            symbol = STATIC_SYMBOL_MAP[normalized_query]
+            _persist_all_asset(symbol, name=normalized_query.title(), asset_type=_infer_asset_type(symbol))
+            _log_resolution(query, symbol, "static")
+            return symbol
 
-    explicit_symbol = _compact_symbol(normalized_query)
-    if explicit_symbol.endswith("-USD") and explicit_symbol.split("-", 1)[0] in CRYPTO_HINTS:
-        _persist_all_asset(explicit_symbol, name=normalized_query.title(), asset_type="crypto")
-        _log_resolution(query, explicit_symbol, "explicit-crypto")
-        return explicit_symbol
+        explicit_symbol = _compact_symbol(normalized_query)
+        if explicit_symbol.endswith("-USD") and explicit_symbol.split("-", 1)[0] in CRYPTO_HINTS:
+            _persist_all_asset(explicit_symbol, name=normalized_query.title(), asset_type="crypto")
+            _log_resolution(query, explicit_symbol, "explicit-crypto")
+            return explicit_symbol
 
-    all_assets_symbol, all_assets_source = _resolve_from_all_assets(normalized_query)
-    if all_assets_symbol:
-        _log_resolution(query, all_assets_symbol, all_assets_source or "all-assets")
-        return all_assets_symbol
+        all_assets_symbol, all_assets_source = _resolve_from_all_assets(normalized_query)
+        if all_assets_symbol:
+            _log_resolution(query, all_assets_symbol, all_assets_source or "all-assets")
+            return all_assets_symbol
 
-    universe_symbol, universe_source = _resolve_from_asset_universe(normalized_query)
-    if universe_symbol:
-        _log_resolution(query, universe_symbol, universe_source or "asset-universe")
-        return universe_symbol
+        universe_symbol, universe_source = _resolve_from_asset_universe(normalized_query)
+        if universe_symbol:
+            _log_resolution(query, universe_symbol, universe_source or "asset-universe")
+            return universe_symbol
 
-    search_symbol, search_source = _resolve_from_yfinance_search(normalized_query)
-    if search_symbol:
-        _log_resolution(query, search_symbol, search_source or "yfinance-search")
-        return search_symbol
+        search_symbol, search_source = _resolve_from_yfinance_search(normalized_query)
+        if search_symbol:
+            _log_resolution(query, search_symbol, search_source or "yfinance-search")
+            return search_symbol
 
-    probe_symbol, probe_source = _resolve_from_direct_probe(normalized_query)
-    if probe_symbol:
-        _log_resolution(query, probe_symbol, probe_source or "direct-probe")
-        return probe_symbol
+        probe_symbol, probe_source = _resolve_from_direct_probe(normalized_query)
+        if probe_symbol:
+            _log_resolution(query, probe_symbol, probe_source or "direct-probe")
+            return probe_symbol
 
-    fuzzy_symbol, fuzzy_source = _resolve_from_fuzzy(normalized_query)
-    if fuzzy_symbol:
-        _log_resolution(query, fuzzy_symbol, fuzzy_source or "fuzzy")
-        return fuzzy_symbol
+        fuzzy_symbol, fuzzy_source = _resolve_from_fuzzy(normalized_query)
+        if fuzzy_symbol:
+            _log_resolution(query, fuzzy_symbol, fuzzy_source or "fuzzy")
+            return fuzzy_symbol
 
-    fallback_symbol = explicit_symbol
-    if any(hint in normalized_query for hint in NSE_HINTS) and not (fallback_symbol.endswith(".NS") or fallback_symbol.endswith(".BO")):
-        fallback_symbol = f"{fallback_symbol}.NS"
-    _log_resolution(query, fallback_symbol, "fallback")
-    return fallback_symbol
+        if _looks_like_market_symbol(explicit_symbol):
+            fallback_symbol = explicit_symbol
+            if any(hint in normalized_query for hint in NSE_HINTS) and not (
+                fallback_symbol.endswith(".NS") or fallback_symbol.endswith(".BO")
+            ):
+                fallback_symbol = f"{fallback_symbol}.NS"
+            _log_resolution(query, fallback_symbol, "fallback")
+            return fallback_symbol
+
+    raise ValueError(f"Could not resolve an asset symbol from query: {query}")
